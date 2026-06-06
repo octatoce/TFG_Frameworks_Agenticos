@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.egg-info/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.crewai_data/
+.env
+.env.*
+!.env.example
+results/raw/**/*.json
+results/processed/**
+results/figures/**
+datasets/raw/**
+datasets/processed/**

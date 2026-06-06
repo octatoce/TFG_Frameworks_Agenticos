@@ -1,0 +1,8 @@
+default_model: deterministic-local-v1
+
+models:
+  - name: deterministic-local-v1
+    provider: local
+    input_cost_per_1k_tokens: 0.0
+    output_cost_per_1k_tokens: 0.0
+    notes: "Deterministic local baseline used for reproducible smoke and contract tests."

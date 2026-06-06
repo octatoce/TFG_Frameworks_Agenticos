@@ -1,0 +1,13 @@
+defaults:
+  temperature: 0.0
+  max_iterations: 10
+  timeout_seconds: 120
+
+frameworks:
+  - langgraph
+  - crewai
+
+architectures:
+  - ARCH_01_SINGLE_REACT
+  - ARCH_02_SEQUENTIAL_PIPELINE
+  - ARCH_03_SUPERVISOR_WORKERS

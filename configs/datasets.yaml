@@ -1,0 +1,10 @@
+datasets:
+  samples:
+    path: datasets/samples
+    description: "Small local cases for smoke tests and early validation."
+  raw:
+    path: datasets/raw
+    description: "Original datasets before processing."
+  processed:
+    path: datasets/processed
+    description: "Normalized datasets ready for benchmark execution."
