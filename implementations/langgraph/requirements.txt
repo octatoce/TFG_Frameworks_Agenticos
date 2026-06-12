@@ -1,0 +1,3 @@
+# Framework dependencies for LangGraph implementations will be added later.
+# Intentionally empty in iteration 1 to avoid introducing real framework logic.
+langgraph==1.2.4
