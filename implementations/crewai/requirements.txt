@@ -1,0 +1,3 @@
+# Framework dependencies for CrewAI implementations will be added later.
+# Intentionally empty in iteration 1 to avoid introducing real framework logic.
+crewai==1.14.6
