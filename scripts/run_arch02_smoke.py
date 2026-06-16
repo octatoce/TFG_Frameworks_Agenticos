@@ -1,0 +1,94 @@
+"""Run the shared ARCH_02 smoke case for LangGraph and CrewAI."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+from benchmark_core.result_writer import save_result_json
+from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentInput
+
+
+ARCHITECTURE = "ARCH_02_SEQUENTIAL_PIPELINE"
+FRAMEWORKS = ["langgraph", "crewai"]
+
+
+def load_runner(repo_root: Path, framework: str):
+    module_path = repo_root / "implementations" / framework / ARCHITECTURE / "run.py"
+    spec = importlib.util.spec_from_file_location(f"{framework}_{ARCHITECTURE}_run", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load runner from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.run_architecture
+
+
+def build_smoke_case() -> ExperimentInput:
+    return ExperimentInput(
+        case_id="iter1-arch02-smoke-001",
+        dataset_id="samples",
+        task_type="document_qa",
+        query=(
+            "Resume el objetivo principal del documento y menciona que criterio "
+            "de evaluacion se valida."
+        ),
+        documents=[
+            DocumentInput(
+                document_id="sample-doc-001",
+                content=(
+                    "El TFG compara frameworks agenticos modernos mediante prototipos equivalentes. "
+                    "La primera iteracion valida estructura del repositorio, schemas comunes, "
+                    "recogida de metricas, ejecucion comparable y persistencia JSON de resultados raw."
+                ),
+                metadata={"source": "synthetic_arch02_smoke_case"},
+            )
+        ],
+        evaluation_criteria={
+            "expected_contains": ["frameworks agenticos", "schemas", "metricas", "JSON"]
+        },
+        metadata={"purpose": "iteration_1_arch02_smoke_test"},
+    )
+
+
+def build_config(framework: str) -> ExperimentConfig:
+    return ExperimentConfig(
+        experiment_id="iter1-arch02-smoke",
+        run_id="iter1-arch02-smoke-001",
+        framework=framework,
+        architecture=ARCHITECTURE,
+        model_provider="local",
+        model_name="deterministic-pipeline-v1",
+        temperature=0.0,
+        max_agent_iterations=3,
+        timeout_seconds=120,
+        retry_count=0,
+        random_seed=42,
+        metadata={
+            "input_cost_per_1k_tokens": 0.0,
+            "output_cost_per_1k_tokens": 0.0,
+            "notes": "Deterministic local LLM for iteration 1 ARCH_02 smoke comparability.",
+        },
+    )
+
+
+def main() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    input_data = build_smoke_case()
+
+    for framework in FRAMEWORKS:
+        runner = load_runner(repo_root, framework)
+        result = runner(input_data, build_config(framework))
+        output_path = save_result_json(result, base_dir=repo_root / "results" / "raw")
+        print(
+            framework,
+            result.status.value,
+            f"steps={result.metrics.step_count}",
+            f"llm_calls={result.metrics.llm_call_count}",
+            f"tokens={result.metrics.token_usage.total_tokens}",
+            output_path,
+        )
+
+
+if __name__ == "__main__":
+    main()
