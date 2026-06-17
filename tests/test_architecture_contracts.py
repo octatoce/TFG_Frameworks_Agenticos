@@ -18,6 +18,15 @@ EXPECTED_RUNNERS = [
     Path("implementations/crewai/ARCH_01_SINGLE_REACT/run.py"),
     Path("implementations/crewai/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
     Path("implementations/crewai/ARCH_03_SUPERVISOR_WORKERS/run.py"),
+    Path("implementations/microsoft_agent_framework/ARCH_01_SINGLE_REACT/run.py"),
+    Path("implementations/microsoft_agent_framework/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
+    Path("implementations/microsoft_agent_framework/ARCH_03_SUPERVISOR_WORKERS/run.py"),
+    Path("implementations/llamaindex/ARCH_01_SINGLE_REACT/run.py"),
+    Path("implementations/llamaindex/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
+    Path("implementations/llamaindex/ARCH_03_SUPERVISOR_WORKERS/run.py"),
+    Path("implementations/pydantic_ai/ARCH_01_SINGLE_REACT/run.py"),
+    Path("implementations/pydantic_ai/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
+    Path("implementations/pydantic_ai/ARCH_03_SUPERVISOR_WORKERS/run.py"),
 ]
 
 
@@ -80,6 +89,7 @@ def test_architecture_runners_return_experiment_result() -> None:
 
         if architecture == "ARCH_01_SINGLE_REACT":
             assert result.status == RunStatus.SUCCESS
+            assert result.metrics.step_count == 1
             assert result.metrics.llm_call_count >= 1
             assert result.final_answer
         elif architecture == "ARCH_02_SEQUENTIAL_PIPELINE":
