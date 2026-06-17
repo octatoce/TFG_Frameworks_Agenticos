@@ -29,8 +29,38 @@ crewai = [
     "crewai==1.14.6",
 ]
 
+microsoft_agent_framework = [
+    "agent-framework",
+]
+
+llamaindex = [
+    "llama-index",
+]
+
+pydantic_ai = [
+    "pydantic-ai",
+    "pydantic-graph",
+]
+
+all-frameworks = [
+    "langgraph==1.2.4",
+    "crewai==1.14.6",
+    "agent-framework",
+    "llama-index",
+    "pydantic-ai",
+    "pydantic-graph",
+]
+
 [tool.setuptools]
-packages = ["benchmark_core", "implementations", "implementations.crewai", "implementations.langgraph"]
+packages = [
+    "benchmark_core",
+    "implementations",
+    "implementations.crewai",
+    "implementations.langgraph",
+    "implementations.llamaindex",
+    "implementations.microsoft_agent_framework",
+    "implementations.pydantic_ai",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
