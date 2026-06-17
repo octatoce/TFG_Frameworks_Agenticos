@@ -2,7 +2,7 @@
 
 Este documento registra decisiones tecnicas relevantes y desviaciones necesarias respecto a la metodologia comun.
 
-## Iteracion 1
+## Estado actual del desarrollo
 
 - Se crea un monorepo unico.
 - Se define `benchmark_core` como paquete comun para contratos, metricas y persistencia.
@@ -15,5 +15,5 @@ Este documento registra decisiones tecnicas relevantes y desviaciones necesarias
 - Se incorpora `OpenAIInstrumentedLLM` para pruebas con API real cuando `ExperimentConfig.model_provider == "openai"`, manteniendo el modo local determinista como baseline reproducible.
 - En `ARCH_02_SEQUENTIAL_PIPELINE`, `Retriever` se implementa inicialmente como fase LLM instrumentada y no como herramienta determinista. Esto fuerza cuatro llamadas LLM por ejecucion y facilita medir el coste completo de un pipeline secuencial.
 - En `ARCH_03_SUPERVISOR_WORKERS`, se introduce una segunda version dinamica: el supervisor decide los workers a ejecutar y los omitidos quedan registrados. El orden de ejecucion sigue siendo canonico para preservar comparabilidad.
-- En CrewAI, `ARCH_03_SUPERVISOR_WORKERS` usa `Process.sequential` con un agente supervisor explicito, en lugar de `Process.hierarchical`, para evitar comportamiento de manager implicito dificil de comparar en la primera iteracion.
+- En CrewAI, `ARCH_03_SUPERVISOR_WORKERS` usa `Process.sequential` con un agente supervisor explicito, en lugar de `Process.hierarchical`, para evitar comportamiento de manager implicito dificil de comparar en el estado actual del desarrollo.
 - La seleccion del supervisor se normaliza mediante un formato parseable (`SELECTED_WORKERS=...`, `SKIPPED_WORKERS=...`). Si un modelo real no respeta el formato, se aplica una politica conservadora para evitar ejecuciones vacias.

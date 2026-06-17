@@ -15,20 +15,20 @@ El objetivo es evaluar de forma comparable aspectos como latencia, consumo de re
 - `notebooks/`: analisis exploratorio y visualizaciones.
 - `tests/`: tests minimos del contrato comun y de la estructura.
 
-## Alcance de la iteracion 1
+## Desarrollado hasta ahora
 
-Frameworks iniciales:
+Frameworks que ya estan incluidos:
 
 - LangGraph
 - CrewAI
 
-Arquitecturas iniciales:
+Arquitecturas que ya estan implementadas:
 
 - `ARCH_01_SINGLE_REACT`
 - `ARCH_02_SEQUENTIAL_PIPELINE`
 - `ARCH_03_SUPERVISOR_WORKERS`
 
-Esta iteracion implementa prototipos minimos funcionales para cada combinacion framework-arquitectura. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Tambien queda preparado un smoke test opcional contra OpenAI mediante variables locales de entorno.
+El estado actual del repositorio ya deja prototipos minimos funcionales para cada combinacion framework-arquitectura. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Tambien queda preparado un smoke test opcional contra OpenAI mediante variables locales de entorno.
 
 ## Instalacion base
 
@@ -68,4 +68,4 @@ Todas las entradas y salidas deben usar los schemas de `benchmark_core`. Las met
 results/raw/{framework}/{architecture}/{run_id}.json
 ```
 
-No se deben introducir prompts, datasets, configuraciones u optimizaciones distintas por framework salvo que la desviacion este documentada en `docs/decisions.md`.
+Si se introducen prompts, datasets, configuraciones u optimizaciones diferentes por framework, tiene que quedar justificado y documentado en `docs/decisions.md`, para que la comparacion siga siendo trazable y lo mas justa posible.
