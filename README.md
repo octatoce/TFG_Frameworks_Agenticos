@@ -21,6 +21,9 @@ Frameworks que ya estan incluidos:
 
 - LangGraph
 - CrewAI
+- Microsoft Agent Framework
+- LlamaIndex
+- Pydantic AI
 
 Arquitecturas que ya estan implementadas:
 
@@ -28,7 +31,21 @@ Arquitecturas que ya estan implementadas:
 - `ARCH_02_SEQUENTIAL_PIPELINE`
 - `ARCH_03_SUPERVISOR_WORKERS`
 
-El estado actual del repositorio ya deja prototipos minimos funcionales para cada combinacion framework-arquitectura. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Tambien queda preparado un smoke test opcional contra OpenAI mediante variables locales de entorno.
+El estado actual del repositorio ya deja prototipos minimos funcionales para la matriz inicial completa de 5 frameworks x 3 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Tambien queda preparado un smoke test opcional contra OpenAI mediante variables locales de entorno.
+
+| Framework | `ARCH_01_SINGLE_REACT` | `ARCH_02_SEQUENTIAL_PIPELINE` | `ARCH_03_SUPERVISOR_WORKERS` |
+| --- | --- | --- | --- |
+| LangGraph | Implementada | Implementada | Implementada |
+| CrewAI | Implementada | Implementada | Implementada |
+| Microsoft Agent Framework | Implementada | Implementada | Implementada |
+| LlamaIndex | Implementada | Implementada | Implementada |
+| Pydantic AI | Implementada | Implementada | Implementada |
+
+Total actual:
+
+```text
+5 frameworks x 3 arquitecturas = 15 implementaciones
+```
 
 ## Instalacion base
 
@@ -48,11 +65,37 @@ python -m venv .venv
 pip install -e ".[dev]"
 ```
 
+Para instalar dependencias especificas de un framework:
+
+```powershell
+pip install -e ".[langgraph]"
+pip install -e ".[crewai]"
+pip install -e ".[microsoft_agent_framework]"
+pip install -e ".[llamaindex]"
+pip install -e ".[pydantic_ai]"
+```
+
+Para instalar todos los frameworks declarados:
+
+```powershell
+pip install -e ".[dev,all-frameworks]"
+```
+
 ## Ejecutar tests
 
 ```bash
 python -m pytest
 ```
+
+## Ejecutar smoke tests
+
+```powershell
+python scripts\run_arch01_smoke.py
+python scripts\run_arch02_smoke.py
+python scripts\run_arch03_smoke.py
+```
+
+Cada script ejecuta la arquitectura correspondiente en los cinco frameworks y guarda resultados raw bajo `results/raw/`.
 
 ## Organizacion de experimentos
 
