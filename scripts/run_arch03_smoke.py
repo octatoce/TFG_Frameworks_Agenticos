@@ -1,8 +1,9 @@
-"""Run the shared ARCH_03 smoke case for LangGraph and CrewAI."""
+"""Run the shared ARCH_03 smoke case for all implemented frameworks."""
 
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 from benchmark_core.result_writer import save_result_json
@@ -10,10 +11,19 @@ from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentIn
 
 
 ARCHITECTURE = "ARCH_03_SUPERVISOR_WORKERS"
-FRAMEWORKS = ["langgraph", "crewai"]
+FRAMEWORKS = [
+    "langgraph",
+    "crewai",
+    "microsoft_agent_framework",
+    "llamaindex",
+    "pydantic_ai",
+]
 
 
 def load_runner(repo_root: Path, framework: str):
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
     module_path = repo_root / "implementations" / framework / ARCHITECTURE / "run.py"
     spec = importlib.util.spec_from_file_location(f"{framework}_{ARCHITECTURE}_run", module_path)
     if spec is None or spec.loader is None:
@@ -26,7 +36,7 @@ def load_runner(repo_root: Path, framework: str):
 
 def build_smoke_case() -> ExperimentInput:
     return ExperimentInput(
-        case_id="iter1-arch03-smoke-001",
+        case_id="arch03-smoke-001",
         dataset_id="samples",
         task_type="document_qa",
         query=(
@@ -47,14 +57,14 @@ def build_smoke_case() -> ExperimentInput:
         evaluation_criteria={
             "expected_contains": ["frameworks agenticos", "schemas", "metricas", "JSON"]
         },
-        metadata={"purpose": "iteration_1_arch03_smoke_test"},
+        metadata={"purpose": "arch03_smoke_test"},
     )
 
 
 def build_config(framework: str) -> ExperimentConfig:
     return ExperimentConfig(
-        experiment_id="iter1-arch03-smoke",
-        run_id="iter1-arch03-smoke-001",
+        experiment_id="arch03-smoke",
+        run_id="arch03-smoke-001",
         framework=framework,
         architecture=ARCHITECTURE,
         model_provider="local",
@@ -67,7 +77,7 @@ def build_config(framework: str) -> ExperimentConfig:
         metadata={
             "input_cost_per_1k_tokens": 0.0,
             "output_cost_per_1k_tokens": 0.0,
-            "notes": "Deterministic local LLM for iteration 1 ARCH_03 smoke comparability.",
+            "notes": "Deterministic local LLM for ARCH_03 smoke comparability.",
         },
     )
 
