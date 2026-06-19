@@ -31,7 +31,7 @@ Arquitecturas que ya estan implementadas:
 - `ARCH_02_SEQUENTIAL_PIPELINE`
 - `ARCH_03_SUPERVISOR_WORKERS`
 
-El estado actual del repositorio ya deja prototipos minimos funcionales para la matriz inicial completa de 5 frameworks x 3 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Tambien queda preparado un smoke test opcional contra OpenAI mediante variables locales de entorno.
+El estado actual del repositorio ya deja prototipos minimos funcionales para la matriz inicial completa de 5 frameworks x 3 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Los tres frameworks nuevos tambien tienen una ruta OpenAI real para las arquitecturas implementadas, usando las primitivas propias de cada framework.
 
 | Framework | `ARCH_01_SINGLE_REACT` | `ARCH_02_SEQUENTIAL_PIPELINE` | `ARCH_03_SUPERVISOR_WORKERS` |
 | --- | --- | --- | --- |
@@ -96,6 +96,14 @@ python scripts\run_arch03_smoke.py
 ```
 
 Cada script ejecuta la arquitectura correspondiente en los cinco frameworks y guarda resultados raw bajo `results/raw/`.
+
+Para validar llamadas reales a OpenAI en `ARCH_01_SINGLE_REACT` para los cinco frameworks:
+
+```powershell
+python scripts\run_arch01_openai_smoke.py
+```
+
+Este script requiere `.env` con `OPENAI_API_KEY` y usa `MODEL_NAME` si esta definido.
 
 ## Organizacion de experimentos
 

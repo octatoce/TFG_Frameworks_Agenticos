@@ -1,12 +1,14 @@
-"""Run ARCH_01 smoke case against the OpenAI API.
+"""Run the shared ARCH_01 smoke case against the OpenAI API.
 
-Requires a local .env file with OPENAI_API_KEY and MODEL_NAME.
+Requires a local .env file with OPENAI_API_KEY. MODEL_NAME defaults to gpt-4o-mini
+when it is not set.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,10 +18,19 @@ from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentIn
 
 
 ARCHITECTURE = "ARCH_01_SINGLE_REACT"
-FRAMEWORKS = ["langgraph", "crewai"]
+FRAMEWORKS = [
+    "langgraph",
+    "crewai",
+    "microsoft_agent_framework",
+    "llamaindex",
+    "pydantic_ai",
+]
 
 
 def load_runner(repo_root: Path, framework: str):
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
     module_path = repo_root / "implementations" / framework / ARCHITECTURE / "run.py"
     spec = importlib.util.spec_from_file_location(f"{framework}_{ARCHITECTURE}_openai_run", module_path)
     if spec is None or spec.loader is None:
@@ -32,7 +43,7 @@ def load_runner(repo_root: Path, framework: str):
 
 def build_smoke_case() -> ExperimentInput:
     return ExperimentInput(
-        case_id="iter1-openai-smoke-001",
+        case_id="arch01-openai-smoke-001",
         dataset_id="samples",
         task_type="document_qa",
         query=(
@@ -44,16 +55,17 @@ def build_smoke_case() -> ExperimentInput:
                 document_id="sample-doc-001",
                 content=(
                     "El TFG compara frameworks agenticos modernos mediante prototipos equivalentes. "
-                    "La primera iteracion valida estructura del repositorio, schemas comunes, "
-                    "recogida de metricas, ejecucion comparable y persistencia JSON de resultados raw."
+                    "La matriz experimental compara cinco frameworks y tres arquitecturas, "
+                    "manteniendo contratos comunes, recogida de metricas, ejecucion comparable "
+                    "y persistencia JSON de resultados raw."
                 ),
                 metadata={"source": "synthetic_openai_smoke_case"},
             )
         ],
         evaluation_criteria={
-            "expected_contains": ["frameworks agenticos", "schemas", "metricas", "JSON"]
+            "expected_contains": ["frameworks", "metricas", "JSON"]
         },
-        metadata={"purpose": "iteration_1_arch01_openai_smoke_test"},
+        metadata={"purpose": "arch01_openai_smoke_test"},
     )
 
 
@@ -64,23 +76,24 @@ def build_config(framework: str) -> ExperimentConfig:
         or "3"
     )
     return ExperimentConfig(
-        experiment_id="iter1-arch01-openai-smoke",
-        run_id=f"iter1-arch01-openai-smoke-001-{framework}",
+        experiment_id="arch01-openai-smoke",
+        run_id=f"arch01-openai-smoke-001-{framework}",
         framework=framework,
         architecture=ARCHITECTURE,
         model_provider="openai",
-        model_name=os.getenv("MODEL_NAME", "gpt-5.4-mini"),
+        model_name=os.getenv("MODEL_NAME", "gpt-4o-mini"),
         temperature=float(os.getenv("TEMPERATURE", "0.0")),
         max_tokens=int(os.getenv("MAX_OUTPUT_TOKENS", "256")),
         max_agent_iterations=max_iterations,
         timeout_seconds=int(os.getenv("TIMEOUT_SECONDS", "120")),
-        retry_count=0,
+        retry_count=int(os.getenv("RETRY_COUNT", "0")),
         random_seed=42,
         metadata={
             "env_file": ".env",
+            "microsoft_openai_client": os.getenv("MICROSOFT_OPENAI_CLIENT", "responses"),
             "input_cost_per_1k_tokens": float(os.getenv("INPUT_COST_PER_1K_TOKENS", "0.0")),
             "output_cost_per_1k_tokens": float(os.getenv("OUTPUT_COST_PER_1K_TOKENS", "0.0")),
-            "notes": "OpenAI API smoke run for iteration 1.",
+            "notes": "OpenAI API smoke run for ARCH_01 across all implemented frameworks.",
         },
     )
 
