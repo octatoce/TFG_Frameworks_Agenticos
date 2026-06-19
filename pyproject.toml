@@ -30,11 +30,12 @@ crewai = [
 ]
 
 microsoft_agent_framework = [
-    "agent-framework",
+    "agent-framework-openai",
 ]
 
 llamaindex = [
     "llama-index",
+    "llama-index-llms-openai",
 ]
 
 pydantic_ai = [
@@ -45,8 +46,9 @@ pydantic_ai = [
 all-frameworks = [
     "langgraph==1.2.4",
     "crewai==1.14.6",
-    "agent-framework",
+    "agent-framework-openai",
     "llama-index",
+    "llama-index-llms-openai",
     "pydantic-ai",
     "pydantic-graph",
 ]
