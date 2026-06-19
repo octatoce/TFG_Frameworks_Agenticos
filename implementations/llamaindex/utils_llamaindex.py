@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable
 
-from benchmark_core.llm_wrapper import InstrumentedLLM, build_llm_from_config
+from benchmark_core.llm_wrapper import (
+    InstrumentedLLM,
+    LLMCallRecord,
+    build_llm_from_config,
+    estimate_token_usage,
+)
+from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
 from benchmark_core.schemas import (
@@ -19,8 +27,23 @@ from benchmark_core.schemas import (
     LLMCallMetrics,
     ResourceUsage,
     RunStatus,
+    TokenUsage,
 )
 from benchmark_core.tracing import utc_now
+
+try:
+    from llama_index.core.agent.workflow import AgentWorkflow, FunctionAgent
+    from llama_index.core.workflow import Event, StartEvent, StopEvent, Workflow, step
+    from llama_index.llms.openai import OpenAI
+except ImportError:  # pragma: no cover - optional dependency guard
+    AgentWorkflow = None
+    FunctionAgent = None
+    Event = None
+    StartEvent = None
+    StopEvent = None
+    Workflow = None
+    step = None
+    OpenAI = None
 
 
 @dataclass
@@ -63,12 +86,128 @@ class DeterministicLlamaIndexAgent:
         )
 
 
+def run_async(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    raise RuntimeError("LlamaIndex runners require a synchronous entrypoint.")
+
+
 def get_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
 def native_framework_available() -> bool:
-    return find_spec("llama_index") is not None
+    return find_spec("llama_index") is not None and find_spec("llama_index.llms.openai") is not None
+
+
+def uses_openai(config: ExperimentConfig) -> bool:
+    return config.model_provider.lower() == "openai"
+
+
+def build_openai_llm(config: ExperimentConfig):
+    if OpenAI is None:
+        raise RuntimeError("llama-index-llms-openai is required for LlamaIndex OpenAI runs.")
+    return OpenAI(
+        model=config.model_name,
+        api_key=config.metadata.get("openai_api_key"),
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        timeout=float(config.timeout_seconds),
+        max_retries=config.retry_count,
+    )
+
+
+def build_function_agent(*, name: str, system_prompt: str, context: LlamaIndexRunContext, input_data: ExperimentInput, config: ExperimentConfig):
+    if uses_openai(config):
+        if FunctionAgent is None:
+            raise RuntimeError("llama-index is required for LlamaIndex OpenAI runs.")
+        return FunctionAgent(
+            name=name,
+            description=f"Benchmark component {name}",
+            llm=build_openai_llm(config),
+            system_prompt=system_prompt,
+            tools=[],
+            allow_parallel_tool_calls=False,
+            timeout=float(config.timeout_seconds),
+            verbose=False,
+        )
+    return DeterministicLlamaIndexAgent(
+        name=name,
+        llm=context.llm,
+        input_data=input_data,
+        config=config,
+    )
+
+
+def complete_openai_agent_step(
+    *,
+    agent: Any,
+    prompt: str,
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+    step_id: int,
+) -> LLMCallRecord:
+    async def run_agent() -> Any:
+        handler = agent.run(user_msg=prompt)
+        return await handler
+
+    started = perf_counter()
+    response = run_async(run_agent())
+    latency_seconds = max(perf_counter() - started, 0.0)
+    response_text = str(response).strip()
+    token_usage = TokenUsage(
+        input_tokens=estimate_token_usage(prompt),
+        output_tokens=estimate_token_usage(response_text),
+        total_tokens=estimate_token_usage(prompt) + estimate_token_usage(response_text),
+    )
+    metrics = LLMCallMetrics(
+        call_id=f"{config.run_id}-llm-{step_id:03d}",
+        step_id=step_id,
+        model_provider=config.model_provider,
+        model_name=config.model_name,
+        latency_seconds=latency_seconds,
+        token_usage=token_usage,
+        estimated_cost_usd=estimate_cost_usd(
+            token_usage,
+            input_cost_per_1k=float(config.metadata.get("input_cost_per_1k_tokens", 0.0)),
+            output_cost_per_1k=float(config.metadata.get("output_cost_per_1k_tokens", 0.0)),
+        ),
+        finish_reason=None,
+        metadata={
+            "deterministic": False,
+            "framework_api": "llamaindex",
+            "agent_type": "FunctionAgent",
+            "token_counting_method": "whitespace_proxy",
+        },
+    )
+    return LLMCallRecord(
+        model_name=config.model_name,
+        prompt=prompt,
+        response=response_text,
+        metrics=metrics,
+    )
+
+
+def complete_agent_step(
+    *,
+    agent: Any,
+    prompt: str,
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+    step_id: int,
+) -> LLMCallRecord:
+    if uses_openai(config):
+        return complete_openai_agent_step(
+            agent=agent,
+            prompt=prompt,
+            input_data=input_data,
+            config=config,
+            step_id=step_id,
+        )
+    return agent.run(prompt, step_id=step_id)
+
 
 
 def extract_final_answer(response: str) -> str:
@@ -152,4 +291,3 @@ def llamaindex_architecture_runner(run_impl: LlamaIndexImplementation):
         )
 
     return wrapper
-

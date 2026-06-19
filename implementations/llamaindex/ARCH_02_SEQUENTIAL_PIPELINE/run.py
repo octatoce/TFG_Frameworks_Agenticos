@@ -6,9 +6,10 @@ from benchmark_core.llm_wrapper import render_sequential_pipeline_prompt
 from benchmark_core.schemas import AgentStep, ExperimentConfig, ExperimentInput
 from benchmark_core.tracing import utc_now
 from implementations.llamaindex.utils_llamaindex import (
-    DeterministicLlamaIndexAgent,
     LlamaIndexRunContext,
     LlamaIndexRunOutput,
+    build_function_agent,
+    complete_agent_step,
     document_ids,
     extract_final_answer,
     framework_execution,
@@ -35,9 +36,13 @@ def run_architecture(
     """Execute a four-step LlamaIndex Workflow-style pipeline."""
 
     def execute() -> LlamaIndexRunOutput:
-        workflow_agent = DeterministicLlamaIndexAgent(
+        workflow_agent = build_function_agent(
             name="sequential_pipeline_workflow",
-            llm=context.llm,
+            system_prompt=(
+                "You are executing one controlled LlamaIndex workflow phase. "
+                "Keep the flow strictly sequential."
+            ),
+            context=context,
             input_data=input_data,
             config=config,
         )
@@ -56,7 +61,13 @@ def run_architecture(
             step_id = next_step_id(state)
             step_started_at = utc_now()
             prompt = render_sequential_pipeline_prompt(input_data, phase=phase, state=state)
-            call_record = workflow_agent.run(prompt, step_id=step_id)
+            call_record = complete_agent_step(
+                agent=workflow_agent,
+                prompt=prompt,
+                input_data=input_data,
+                config=config,
+                step_id=step_id,
+            )
             phase_output = call_record.response.strip()
             state[output_key] = phase_output
             step = AgentStep(
@@ -96,4 +107,3 @@ def run_architecture(
         )
 
     return run_with_resource_monitor(execute)
-

@@ -6,9 +6,10 @@ from benchmark_core.llm_wrapper import render_single_react_prompt
 from benchmark_core.schemas import AgentStep, ExperimentConfig, ExperimentInput
 from benchmark_core.tracing import utc_now
 from implementations.llamaindex.utils_llamaindex import (
-    DeterministicLlamaIndexAgent,
     LlamaIndexRunContext,
     LlamaIndexRunOutput,
+    build_function_agent,
+    complete_agent_step,
     document_ids,
     extract_final_answer,
     framework_execution,
@@ -27,14 +28,21 @@ def run_architecture(
 
     def execute() -> LlamaIndexRunOutput:
         prompt = render_single_react_prompt(input_data)
-        agent = DeterministicLlamaIndexAgent(
+        agent = build_function_agent(
             name="single_react_agent",
-            llm=context.llm,
+            system_prompt="You are a single LlamaIndex FunctionAgent for a benchmark run.",
+            context=context,
             input_data=input_data,
             config=config,
         )
         step_started_at = utc_now()
-        call_record = agent.run(prompt, step_id=1)
+        call_record = complete_agent_step(
+            agent=agent,
+            prompt=prompt,
+            input_data=input_data,
+            config=config,
+            step_id=1,
+        )
         final_answer = extract_final_answer(call_record.response)
         structured_output = {
             "answer": final_answer,
@@ -53,7 +61,7 @@ def run_architecture(
             started_at=step_started_at,
             finished_at=utc_now(),
             metadata={
-                "agent_name": agent.name,
+                "agent_name": getattr(agent, "name", "single_react_agent"),
                 "agent_workflow_shape": "single_function_agent",
                 "native_framework_available": context.native_framework_available,
             },
@@ -66,4 +74,3 @@ def run_architecture(
         )
 
     return run_with_resource_monitor(execute)
-

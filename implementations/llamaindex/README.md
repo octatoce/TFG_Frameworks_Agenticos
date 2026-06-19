@@ -1,8 +1,10 @@
 # LlamaIndex
 
-Implementaciones de la iteracion 2 para LlamaIndex Workflows / AgentWorkflow.
+Implementaciones para LlamaIndex Workflows / AgentWorkflow.
 
-El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` para mantener la comparabilidad con LangGraph y CrewAI sin requerir credenciales ni dependencias externas durante los tests. La dependencia nativa queda declarada en `requirements.txt` para ejecuciones futuras con el framework instalado.
+El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` para mantener la comparabilidad con los demas frameworks durante los tests.
+
+Cuando `ExperimentConfig.model_provider == "openai"`, la ruta real usa `llama_index.core.agent.workflow.FunctionAgent` con `llama_index.llms.openai.OpenAI`.
 
 Arquitecturas incluidas:
 
