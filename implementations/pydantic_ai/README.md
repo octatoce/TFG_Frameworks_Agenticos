@@ -1,8 +1,10 @@
 # Pydantic AI
 
-Implementaciones de la iteracion 2 para Pydantic AI + pydantic-graph.
+Implementaciones para Pydantic AI + pydantic-graph.
 
-El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` y modelos Pydantic para validar salidas intermedias sin alterar el contrato comun. Las dependencias nativas quedan declaradas en `requirements.txt` para ejecuciones futuras con el framework instalado.
+El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` y modelos Pydantic para validar salidas intermedias sin alterar el contrato comun.
+
+Cuando `ExperimentConfig.model_provider == "openai"`, la ruta real usa `pydantic_ai.Agent` con modelo `openai:<model_name>`. Las salidas comunes se validan despues con modelos Pydantic locales.
 
 Arquitecturas incluidas:
 

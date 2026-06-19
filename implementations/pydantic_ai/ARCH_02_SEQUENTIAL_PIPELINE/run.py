@@ -6,10 +6,11 @@ from benchmark_core.llm_wrapper import render_sequential_pipeline_prompt
 from benchmark_core.schemas import AgentStep, ExperimentConfig, ExperimentInput
 from benchmark_core.tracing import utc_now
 from implementations.pydantic_ai.utils_pydantic_ai import (
-    DeterministicPydanticAgent,
     PydanticAIPipelineOutput,
     PydanticAIRunContext,
     PydanticAIRunOutput,
+    build_typed_agent,
+    complete_agent_step,
     document_ids,
     extract_final_answer,
     framework_execution,
@@ -36,9 +37,12 @@ def run_architecture(
     """Execute a typed four-phase Pydantic AI-style pipeline."""
 
     def execute() -> PydanticAIRunOutput:
-        agent = DeterministicPydanticAgent(
+        agent = build_typed_agent(
             name="sequential_pipeline",
-            llm=context.llm,
+            instructions=(
+                "You are a typed component in a strict Planner -> Retriever -> Analyst -> Writer pipeline."
+            ),
+            context=context,
             input_data=input_data,
             config=config,
         )
@@ -57,7 +61,13 @@ def run_architecture(
             step_id = next_step_id(state)
             step_started_at = utc_now()
             prompt = render_sequential_pipeline_prompt(input_data, phase=phase, state=state)
-            call_record = agent.run_sync(prompt, step_id=step_id)
+            call_record = complete_agent_step(
+                agent=agent,
+                prompt=prompt,
+                input_data=input_data,
+                config=config,
+                step_id=step_id,
+            )
             phase_output = call_record.response.strip()
             state[output_key] = phase_output
             step = AgentStep(
@@ -98,4 +108,3 @@ def run_architecture(
         )
 
     return run_with_resource_monitor(execute)
-

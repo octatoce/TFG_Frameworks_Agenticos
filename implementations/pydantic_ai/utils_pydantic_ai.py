@@ -5,11 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
-from benchmark_core.llm_wrapper import InstrumentedLLM, build_llm_from_config
+from benchmark_core.llm_wrapper import (
+    InstrumentedLLM,
+    LLMCallRecord,
+    build_llm_from_config,
+    estimate_token_usage,
+)
+from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
 from benchmark_core.schemas import (
@@ -21,8 +28,20 @@ from benchmark_core.schemas import (
     LLMCallMetrics,
     ResourceUsage,
     RunStatus,
+    TokenUsage,
 )
 from benchmark_core.tracing import utc_now
+
+try:
+    from pydantic_ai import Agent
+    from pydantic_graph import BaseNode, End, GraphBuilder, GraphRunContext, StepContext
+except ImportError:  # pragma: no cover - optional dependency guard
+    Agent = None
+    BaseNode = None
+    End = None
+    GraphBuilder = None
+    GraphRunContext = None
+    StepContext = None
 
 
 class PydanticAIStructuredOutput(BaseModel):
@@ -85,6 +104,93 @@ class DeterministicPydanticAgent:
             call_id=f"{self.config.run_id}-llm-{step_id:03d}",
             step_id=step_id,
         )
+
+
+def uses_openai(config: ExperimentConfig) -> bool:
+    return config.model_provider.lower() == "openai"
+
+
+def build_typed_agent(*, name: str, instructions: str, context: PydanticAIRunContext, input_data: ExperimentInput, config: ExperimentConfig):
+    if uses_openai(config):
+        if Agent is None:
+            raise RuntimeError("pydantic-ai is required for Pydantic AI OpenAI runs.")
+        return Agent(
+            f"openai:{config.model_name}",
+            output_type=str,
+            instructions=instructions,
+            name=name,
+            retries=config.retry_count,
+        )
+    return DeterministicPydanticAgent(
+        name=name,
+        llm=context.llm,
+        input_data=input_data,
+        config=config,
+    )
+
+
+def complete_openai_agent_step(
+    *,
+    agent: Any,
+    prompt: str,
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+    step_id: int,
+) -> LLMCallRecord:
+    started = perf_counter()
+    result = agent.run_sync(prompt)
+    latency_seconds = max(perf_counter() - started, 0.0)
+    response_text = str(result.output).strip()
+    token_usage = TokenUsage(
+        input_tokens=estimate_token_usage(prompt),
+        output_tokens=estimate_token_usage(response_text),
+        total_tokens=estimate_token_usage(prompt) + estimate_token_usage(response_text),
+    )
+    metrics = LLMCallMetrics(
+        call_id=f"{config.run_id}-llm-{step_id:03d}",
+        step_id=step_id,
+        model_provider=config.model_provider,
+        model_name=config.model_name,
+        latency_seconds=latency_seconds,
+        token_usage=token_usage,
+        estimated_cost_usd=estimate_cost_usd(
+            token_usage,
+            input_cost_per_1k=float(config.metadata.get("input_cost_per_1k_tokens", 0.0)),
+            output_cost_per_1k=float(config.metadata.get("output_cost_per_1k_tokens", 0.0)),
+        ),
+        finish_reason=None,
+        metadata={
+            "deterministic": False,
+            "framework_api": "pydantic_ai",
+            "agent_type": "Agent[str]",
+            "token_counting_method": "whitespace_proxy",
+        },
+    )
+    return LLMCallRecord(
+        model_name=config.model_name,
+        prompt=prompt,
+        response=response_text,
+        metrics=metrics,
+    )
+
+
+def complete_agent_step(
+    *,
+    agent: Any,
+    prompt: str,
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+    step_id: int,
+) -> LLMCallRecord:
+    if uses_openai(config):
+        return complete_openai_agent_step(
+            agent=agent,
+            prompt=prompt,
+            input_data=input_data,
+            config=config,
+            step_id=step_id,
+        )
+    return agent.run_sync(prompt, step_id=step_id)
 
 
 def get_repo_root() -> Path:
@@ -183,4 +289,3 @@ def pydantic_ai_architecture_runner(run_impl: PydanticAIImplementation):
         )
 
     return wrapper
-
