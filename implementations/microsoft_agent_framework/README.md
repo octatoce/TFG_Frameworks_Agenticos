@@ -1,8 +1,10 @@
 # Microsoft Agent Framework
 
-Implementaciones de la iteracion 2 para Microsoft Agent Framework.
+Implementaciones para Microsoft Agent Framework.
 
-El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` para mantener la comparabilidad con LangGraph y CrewAI sin requerir credenciales ni dependencias externas durante los tests. La dependencia nativa queda declarada en `requirements.txt` para ejecuciones futuras con el framework instalado.
+El baseline ejecutable usa un adaptador determinista local sobre `benchmark_core` para mantener la comparabilidad con los demas frameworks durante los tests.
+
+Cuando `ExperimentConfig.model_provider == "openai"`, la ruta real usa `agent_framework.BaseAgent` como custom agent y llama al SDK oficial de OpenAI Responses desde el agente. Esta ruta evita un fallo de `ContextVar` observado en este entorno con `OpenAIChatClient` y `OpenAIChatCompletionClient`.
 
 Arquitecturas incluidas:
 

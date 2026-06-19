@@ -6,9 +6,10 @@ from benchmark_core.llm_wrapper import render_sequential_pipeline_prompt
 from benchmark_core.schemas import AgentStep, ExperimentConfig, ExperimentInput
 from benchmark_core.tracing import utc_now
 from implementations.microsoft_agent_framework.utils_microsoft_agent_framework import (
-    DeterministicMicrosoftAgent,
     MicrosoftAgentFrameworkRunContext,
     MicrosoftAgentFrameworkRunOutput,
+    build_agent,
+    complete_agent_step,
     document_ids,
     extract_final_answer,
     framework_execution,
@@ -35,9 +36,13 @@ def run_architecture(
     """Execute a four-step Microsoft Agent Framework-style functional workflow."""
 
     def execute() -> MicrosoftAgentFrameworkRunOutput:
-        agent = DeterministicMicrosoftAgent(
+        agent = build_agent(
             name="sequential_pipeline_workflow",
-            llm=context.llm,
+            instructions=(
+                "You are executing one phase of a controlled sequential benchmark workflow. "
+                "Do not route dynamically or call other agents."
+            ),
+            context=context,
             input_data=input_data,
             config=config,
         )
@@ -56,7 +61,13 @@ def run_architecture(
             step_id = next_step_id(state)
             step_started_at = utc_now()
             prompt = render_sequential_pipeline_prompt(input_data, phase=phase, state=state)
-            call_record = agent.run(prompt, step_id=step_id)
+            call_record = complete_agent_step(
+                agent=agent,
+                prompt=prompt,
+                input_data=input_data,
+                config=config,
+                step_id=step_id,
+            )
             phase_output = call_record.response.strip()
             state[output_key] = phase_output
             step = AgentStep(
@@ -96,4 +107,3 @@ def run_architecture(
         )
 
     return run_with_resource_monitor(execute)
-

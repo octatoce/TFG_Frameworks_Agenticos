@@ -6,9 +6,10 @@ from benchmark_core.llm_wrapper import parse_worker_selection, render_supervisor
 from benchmark_core.schemas import AgentStep, ExperimentConfig, ExperimentInput
 from benchmark_core.tracing import utc_now
 from implementations.microsoft_agent_framework.utils_microsoft_agent_framework import (
-    DeterministicMicrosoftAgent,
     MicrosoftAgentFrameworkRunContext,
     MicrosoftAgentFrameworkRunOutput,
+    build_agent,
+    complete_agent_step,
     document_ids,
     extract_final_answer,
     framework_execution,
@@ -37,9 +38,13 @@ def run_architecture(
     """Execute a supervisor-workers Microsoft Agent Framework-style workflow."""
 
     def execute() -> MicrosoftAgentFrameworkRunOutput:
-        agent = DeterministicMicrosoftAgent(
+        agent = build_agent(
             name="supervisor_workers_workflow",
-            llm=context.llm,
+            instructions=(
+                "You are a controlled supervisor/workers benchmark agent. "
+                "Respect supervisor-only coordination and the requested phase."
+            ),
+            context=context,
             input_data=input_data,
             config=config,
         )
@@ -61,7 +66,13 @@ def run_architecture(
             step_id = next_step_id(state)
             step_started_at = utc_now()
             prompt = render_supervisor_workers_prompt(input_data, phase=phase, state=state)
-            call_record = agent.run(prompt, step_id=step_id)
+            call_record = complete_agent_step(
+                agent=agent,
+                prompt=prompt,
+                input_data=input_data,
+                config=config,
+                step_id=step_id,
+            )
             phase_output = call_record.response.strip()
 
             if phase == "supervisor_planning":
@@ -120,4 +131,3 @@ def run_architecture(
         )
 
     return run_with_resource_monitor(execute)
-
