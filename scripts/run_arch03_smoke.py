@@ -10,7 +10,7 @@ from benchmark_core.result_writer import save_result_json
 from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentInput
 
 
-ARCHITECTURE = "ARCH_03_SUPERVISOR_WORKERS"
+ARCHITECTURE = "ARCH_03_ROUTER_SPECIALISTS"
 FRAMEWORKS = [
     "langgraph",
     "crewai",
@@ -68,7 +68,7 @@ def build_config(framework: str) -> ExperimentConfig:
         framework=framework,
         architecture=ARCHITECTURE,
         model_provider="local",
-        model_name="deterministic-supervisor-v1",
+        model_name="deterministic-router-v1",
         temperature=0.0,
         max_agent_iterations=3,
         timeout_seconds=120,
