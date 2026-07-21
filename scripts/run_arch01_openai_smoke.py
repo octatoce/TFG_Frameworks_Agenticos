@@ -14,7 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from benchmark_core.result_writer import save_result_json
-from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentInput
+from benchmark_core.schemas import DocumentInput, ExperimentConfig, ExperimentInput, RunStatus
 
 
 ARCHITECTURE = "ARCH_01_SINGLE_REACT"
@@ -106,6 +106,13 @@ def main() -> None:
     for framework in FRAMEWORKS:
         runner = load_runner(repo_root, framework)
         result = runner(input_data, build_config(framework))
+        assert result.status == RunStatus.SUCCESS
+        assert result.llm_calls
+        assert all(call.token_usage.total_tokens > 0 for call in result.llm_calls)
+        assert all(
+            call.metadata.get("token_counting_method") == "openai_usage"
+            for call in result.llm_calls
+        )
         output_path = save_result_json(result, base_dir=repo_root / "results" / "raw")
         print(
             framework,

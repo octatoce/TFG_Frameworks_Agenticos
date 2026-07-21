@@ -14,9 +14,9 @@ from benchmark_core.llm_wrapper import (
     InstrumentedLLM,
     LLMCallRecord,
     build_llm_from_config,
-    estimate_token_usage,
 )
 from benchmark_core.metrics import estimate_cost_usd
+from benchmark_core.openai_usage import extract_openai_token_usage
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
 from benchmark_core.result_writer import save_result_json
@@ -29,7 +29,6 @@ from benchmark_core.schemas import (
     LLMCallMetrics,
     ResourceUsage,
     RunStatus,
-    TokenUsage,
 )
 from benchmark_core.tracing import utc_now
 
@@ -267,11 +266,7 @@ def complete_openai_agent_step(
     result = agent.run_sync(prompt)
     latency_seconds = max(perf_counter() - started, 0.0)
     response_text = str(result.output).strip()
-    token_usage = TokenUsage(
-        input_tokens=estimate_token_usage(prompt),
-        output_tokens=estimate_token_usage(response_text),
-        total_tokens=estimate_token_usage(prompt) + estimate_token_usage(response_text),
-    )
+    token_usage = extract_openai_token_usage(result)
     metrics = LLMCallMetrics(
         call_id=f"{config.run_id}-llm-{step_id:03d}",
         step_id=step_id,
@@ -289,7 +284,7 @@ def complete_openai_agent_step(
             "deterministic": False,
             "framework_api": "pydantic_ai",
             "agent_type": "Agent[str]",
-            "token_counting_method": "whitespace_proxy",
+            "token_counting_method": "openai_usage",
         },
     )
     return LLMCallRecord(

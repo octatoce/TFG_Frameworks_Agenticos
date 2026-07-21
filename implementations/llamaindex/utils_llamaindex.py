@@ -13,9 +13,9 @@ from benchmark_core.llm_wrapper import (
     InstrumentedLLM,
     LLMCallRecord,
     build_llm_from_config,
-    estimate_token_usage,
 )
 from benchmark_core.metrics import estimate_cost_usd
+from benchmark_core.openai_usage import extract_openai_token_usage
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
 from benchmark_core.result_writer import save_result_json
@@ -28,7 +28,6 @@ from benchmark_core.schemas import (
     LLMCallMetrics,
     ResourceUsage,
     RunStatus,
-    TokenUsage,
 )
 from benchmark_core.tracing import utc_now
 
@@ -131,6 +130,7 @@ def build_function_agent(*, name: str, system_prompt: str, context: LlamaIndexRu
             system_prompt=system_prompt,
             tools=[],
             allow_parallel_tool_calls=False,
+            streaming=False,
             timeout=float(config.timeout_seconds),
             verbose=False,
         )
@@ -158,11 +158,7 @@ def complete_openai_agent_step(
     response = run_async(run_agent())
     latency_seconds = max(perf_counter() - started, 0.0)
     response_text = str(response).strip()
-    token_usage = TokenUsage(
-        input_tokens=estimate_token_usage(prompt),
-        output_tokens=estimate_token_usage(response_text),
-        total_tokens=estimate_token_usage(prompt) + estimate_token_usage(response_text),
-    )
+    token_usage = extract_openai_token_usage(response)
     metrics = LLMCallMetrics(
         call_id=f"{config.run_id}-llm-{step_id:03d}",
         step_id=step_id,
@@ -180,7 +176,7 @@ def complete_openai_agent_step(
             "deterministic": False,
             "framework_api": "llamaindex",
             "agent_type": "FunctionAgent",
-            "token_counting_method": "whitespace_proxy",
+            "token_counting_method": "openai_usage",
         },
     )
     return LLMCallRecord(

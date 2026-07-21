@@ -8,6 +8,7 @@ from pathlib import Path
 from time import perf_counter
 
 from benchmark_core.metrics import estimate_cost_usd
+from benchmark_core.openai_usage import extract_openai_token_usage
 from benchmark_core.schemas import ExperimentConfig, ExperimentInput, LLMCallMetrics, TokenUsage
 from benchmark_core.handoff_swarm import (
     AGENT_DISPLAY_NAMES,
@@ -800,7 +801,7 @@ class OpenAIInstrumentedLLM(InstrumentedLLM):
         latency_seconds = max(perf_counter() - started, 0.0)
 
         response_text = response.output_text.strip()
-        token_usage = self._extract_token_usage(response)
+        token_usage = extract_openai_token_usage(response)
         metrics = LLMCallMetrics(
             call_id=call_id,
             step_id=step_id,
@@ -840,24 +841,9 @@ class OpenAIInstrumentedLLM(InstrumentedLLM):
         load_dotenv(self.env_file)
 
     def _extract_token_usage(self, response) -> TokenUsage:
-        usage = getattr(response, "usage", None)
-        if usage is None:
-            return TokenUsage()
+        """Preserve the existing API while using strict provider usage."""
 
-        input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-        output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-        total_tokens = int(getattr(usage, "total_tokens", input_tokens + output_tokens) or 0)
-        input_details = getattr(usage, "input_tokens_details", None)
-        output_details = getattr(usage, "output_tokens_details", None)
-        cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
-        reasoning_tokens = int(getattr(output_details, "reasoning_tokens", 0) or 0)
-        return TokenUsage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
-            reasoning_tokens=reasoning_tokens,
-            total_tokens=total_tokens,
-        )
+        return extract_openai_token_usage(response)
 
     def _extract_finish_reason(self, response) -> str | None:
         output = getattr(response, "output", None)
