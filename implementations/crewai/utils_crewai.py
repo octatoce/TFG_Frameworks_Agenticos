@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any, Callable
 
 from pydantic import PrivateAttr
@@ -104,6 +105,8 @@ def create_benchmark_crewai_llm(
 
     class BenchmarkCrewAILLM(BaseLLM):
         _call_records: list = PrivateAttr(default_factory=list)
+        _call_counter: int = PrivateAttr(default=0)
+        _call_lock: Any = PrivateAttr(default_factory=Lock)
         _config: ExperimentConfig = PrivateAttr()
         _input_data: ExperimentInput = PrivateAttr()
         _instrumented_llm: InstrumentedLLM = PrivateAttr()
@@ -138,7 +141,12 @@ def create_benchmark_crewai_llm(
             response_model=None,
         ) -> str:
             prompt = messages_to_text(messages)
-            call_number = len(self._call_records) + 1
+            # CrewAI async tasks call this adapter from worker threads. Allocate
+            # stable unique ids without serializing the actual LLM request.
+            with self._call_lock:
+                self._call_counter += 1
+                call_number = self._call_counter
+            call_started_at = utc_now()
             deterministic_response = build_crewai_native_hierarchical_response(
                 prompt=prompt,
                 input_data=self._input_data,
@@ -177,7 +185,14 @@ def create_benchmark_crewai_llm(
                         },
                     ),
                 )
-                self._call_records.append(call_record)
+                call_record.metrics.metadata.update(
+                    {
+                        "crewai_call_started_at": call_started_at.isoformat(),
+                        "crewai_call_finished_at": utc_now().isoformat(),
+                    }
+                )
+                with self._call_lock:
+                    self._call_records.append(call_record)
                 return call_record.response
 
             call_record = self._instrumented_llm.complete(
@@ -186,7 +201,14 @@ def create_benchmark_crewai_llm(
                 call_id=f"{self._config.run_id}-llm-{call_number:03d}",
                 step_id=call_number,
             )
-            self._call_records.append(call_record)
+            call_record.metrics.metadata.update(
+                {
+                    "crewai_call_started_at": call_started_at.isoformat(),
+                    "crewai_call_finished_at": utc_now().isoformat(),
+                }
+            )
+            with self._call_lock:
+                self._call_records.append(call_record)
             return call_record.response
 
     return BenchmarkCrewAILLM(
@@ -330,6 +352,7 @@ def create_agent(
         max_iter=max_iter or config.max_agent_iterations,
         allow_delegation=allow_delegation,
         max_retry_limit=config.retry_count,
+        max_execution_time=config.timeout_seconds,
         memory=False,
     )
 
@@ -341,6 +364,7 @@ def create_task(
     agent: Any | None,
     config: ExperimentConfig,
     context: list[Any] | None = None,
+    async_execution: bool = False,
 ):
     from crewai import Task
 
@@ -349,6 +373,7 @@ def create_task(
         expected_output=expected_output,
         agent=agent,
         context=context,
+        async_execution=async_execution,
         guardrail_max_retries=config.retry_count,
     )
 
@@ -363,7 +388,9 @@ def create_sequential_crew(*, agents: list[Any], tasks: list[Any]):
         verbose=False,
         memory=False,
         cache=False,
+        planning=False,
         tracing=False,
+        checkpoint=False,
     )
 
 

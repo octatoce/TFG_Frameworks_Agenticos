@@ -35,6 +35,25 @@ def build_experiment_result(
 ) -> ExperimentResult:
     """Build a complete canonical result object."""
 
+    metrics = build_metrics(
+        started_at=started_at,
+        finished_at=finished_at,
+        steps=steps,
+        errors=errors,
+        llm_calls=llm_calls,
+        resource_usage=resource_usage,
+    )
+    metrics.metadata["latency_total_ms"] = metrics.total_latency_seconds * 1000
+    parallel_execution = structured_output.get("parallel_execution")
+    if isinstance(parallel_execution, dict):
+        metrics.metadata["parallel_execution"] = parallel_execution
+    map_reduce_execution = structured_output.get("map_reduce_execution")
+    if isinstance(map_reduce_execution, dict):
+        metrics.metadata["map_reduce_execution"] = map_reduce_execution
+    debate_execution = structured_output.get("debate_execution")
+    if isinstance(debate_execution, dict):
+        metrics.metadata["debate_execution"] = debate_execution
+
     return ExperimentResult(
         case_id=input_data.case_id,
         dataset_id=input_data.dataset_id,
@@ -46,14 +65,7 @@ def build_experiment_result(
         structured_output=structured_output,
         input_snapshot=input_data,
         config_snapshot=config,
-        metrics=build_metrics(
-            started_at=started_at,
-            finished_at=finished_at,
-            steps=steps,
-            errors=errors,
-            llm_calls=llm_calls,
-            resource_usage=resource_usage,
-        ),
+        metrics=metrics,
         steps=steps,
         llm_calls=llm_calls,
         errors=errors,

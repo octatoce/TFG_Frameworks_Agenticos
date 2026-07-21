@@ -14,6 +14,18 @@ from benchmark_core.handoff_swarm import (
     HANDOFF_AGENTS,
     build_deterministic_handoff_output,
 )
+from benchmark_core.parallel_fanout_fanin import (
+    build_deterministic_parallel_output,
+    detect_parallel_component,
+)
+from benchmark_core.map_reduce_agentic import (
+    build_deterministic_map_reduce_output,
+    detect_map_reduce_component,
+)
+from benchmark_core.debate_judge import (
+    build_deterministic_debate_output,
+    detect_debate_component,
+)
 
 
 @dataclass
@@ -683,6 +695,9 @@ class InstrumentedLLM:
         router_phase = detect_router_phase(prompt)
         supervisor_phase = detect_supervisor_phase(prompt)
         handoff_agent = detect_handoff_agent(prompt)
+        parallel_component = detect_parallel_component(prompt)
+        map_reduce_component = detect_map_reduce_component(prompt)
+        debate_component = detect_debate_component(prompt)
         if phase is not None:
             response = build_deterministic_pipeline_output(input_data, phase)
         elif router_phase is not None:
@@ -691,6 +706,16 @@ class InstrumentedLLM:
             response = build_deterministic_supervisor_output(input_data, supervisor_phase, prompt)
         elif handoff_agent is not None:
             response = build_deterministic_handoff_output(input_data, handoff_agent, prompt)
+        elif parallel_component is not None:
+            response = build_deterministic_parallel_output(input_data, parallel_component)
+        elif map_reduce_component is not None:
+            response = build_deterministic_map_reduce_output(
+                input_data,
+                map_reduce_component,
+                prompt,
+            )
+        elif debate_component is not None:
+            response = build_deterministic_debate_output(input_data, debate_component)
         else:
             final_answer = build_deterministic_answer(input_data)
             response = f"Thought: I can answer from the provided benchmark input.\nFinal Answer: {final_answer}"
