@@ -1,98 +1,140 @@
-# Evaluacion de Frameworks Agenticos Modernos: Comparativa Tecnica
+# Evaluación de Frameworks Agénticos Modernos: Comparativa Técnica
 
-Este repositorio contiene el entorno de experimentacion para un Trabajo Fin de Grado de Ingenieria Informatica centrado en comparar tecnicamente frameworks modernos de agentes LLM mediante prototipos reales.
+Este repositorio contiene el código de mi Trabajo Fin de Grado de Ingeniería Informática. El objetivo del proyecto es comparar varios frameworks agénticos modernos implementando las mismas arquitecturas y ejecutándolas bajo unas condiciones experimentales comunes.
 
-El objetivo es evaluar de forma comparable aspectos como latencia, consumo de recursos, numero de llamadas al LLM, tokens, coste estimado, errores, mantenibilidad y facilidad de implementacion.
+La idea no es decidir qué framework es mejor en términos absolutos, sino estudiar qué diferencias aparecen cuando todos resuelven el mismo problema con el mismo modelo, los mismos datos y una arquitectura equivalente. Me interesan especialmente la latencia, el consumo de tokens, el número de llamadas al LLM, los errores, la trazabilidad y la dificultad de expresar cada patrón en el framework.
+
+## Estado actual
+
+Actualmente se comparan cinco frameworks:
+
+- LangGraph
+- Microsoft Agent Framework
+- CrewAI
+- LlamaIndex
+- Pydantic AI junto con pydantic-graph
+
+Se han implementado ocho arquitecturas en cada uno de ellos:
+
+1. `ARCH_01_SINGLE_REACT`: un único agente con un ciclo ReAct sencillo.
+2. `ARCH_02_SEQUENTIAL_PIPELINE`: pipeline con fases dependientes ejecutadas en orden.
+3. `ARCH_03_ROUTER_SPECIALISTS`: un router selecciona los especialistas necesarios para cada caso.
+4. `ARCH_04_SUPERVISOR_WORKERS`: un supervisor central planifica, delega, revisa y limita las iteraciones.
+5. `ARCH_05_HANDOFF_SWARM`: varios especialistas se transfieren el control mediante handoffs.
+6. `ARCH_06_PARALLEL_FANOUT_FANIN`: cuatro perspectivas independientes trabajan en paralelo y un agregador combina sus resultados.
+7. `ARCH_07_MAP_REDUCE_AGENTIC`: los documentos se dividen en batches, se procesan con mappers equivalentes y se sintetizan con un reducer.
+8. `ARCH_08_DEBATE_JUDGE`: tres propuestas independientes pasan por una ronda de crítica y un juez toma la decisión final.
+
+Esto da una matriz de 40 implementaciones:
+
+| Framework | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LangGraph | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
+| Microsoft Agent Framework | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
+| CrewAI | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
+| LlamaIndex | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
+| Pydantic AI | Sí | Sí | Sí | Sí | Sí | Sí | Sí | Sí |
+
+## Metodología común
+
+Todas las implementaciones respetan el mismo contrato:
+
+```python
+run_architecture(
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+) -> ExperimentResult
+```
+
+Para mantener la comparación lo más justa posible se utilizan:
+
+- los mismos modelos y parámetros de generación;
+- los mismos datasets e inputs;
+- los mismos límites de tiempo e iteraciones;
+- las mismas herramientas cuando una arquitectura las necesita;
+- schemas comunes para entradas, configuración y resultados;
+- métricas y trazas construidas desde `benchmark_core`;
+- las primitivas propias de cada framework siempre que existe una alternativa estable.
+
+Los resultados de cada ejecución se guardan en:
+
+```text
+results/raw/{framework}/{architecture}/{run_id}.json
+```
+
+Las decisiones que pueden afectar a la equivalencia entre frameworks están explicadas en [`docs/decisions.md`](docs/decisions.md). Las especificaciones completas de las arquitecturas están en [`docs/architecture_specs/`](docs/architecture_specs/).
+
+## Medición de tokens
+
+En las ejecuciones con OpenAI, los cinco frameworks utilizan el objeto `usage` devuelto por el proveedor. Los distintos formatos de Responses API, Chat Completions y Pydantic AI se normalizan en los mismos campos:
+
+- tokens de entrada;
+- tokens de salida;
+- tokens de entrada en caché;
+- tokens de razonamiento;
+- tokens totales.
+
+Cada llamada queda identificada con `token_counting_method=openai_usage`. Si un SDK no devuelve información de uso, la ejecución falla en lugar de sustituirla silenciosamente por una estimación.
+
+El modelo local determinista sí utiliza un proxy por palabras. Su finalidad es comprobar contratos, grafos, trazas y persistencia sin consumir una API externa. Estos resultados no deben mezclarse con los resultados OpenAI al comparar tokens.
 
 ## Estructura del repositorio
 
-- `benchmark_core/`: paquete comun con schemas, metricas, tracing, monitorizacion de recursos, escritura de resultados y contrato de ejecucion.
-- `implementations/`: implementaciones por framework. Cada framework contiene una subcarpeta por arquitectura.
-- `configs/`: configuraciones compartidas de modelos, experimentos y datasets.
-- `docs/`: metodologia, decisiones y especificaciones academicas de arquitecturas.
-- `datasets/`: datos raw y procesados usados por los experimentos.
-- `results/`: resultados raw en JSON, resultados procesados y figuras generadas.
-- `notebooks/`: analisis exploratorio y visualizaciones.
-- `tests/`: tests minimos del contrato comun y de la estructura.
-
-## Desarrollado hasta ahora
-
-Frameworks que ya estan incluidos:
-
-- LangGraph
-- CrewAI
-- Microsoft Agent Framework
-- LlamaIndex
-- Pydantic AI
-
-Arquitecturas que ya estan implementadas:
-
-- `ARCH_01_SINGLE_REACT`
-- `ARCH_02_SEQUENTIAL_PIPELINE`
-- `ARCH_03_ROUTER_SPECIALISTS`
-- `ARCH_04_SUPERVISOR_WORKERS`
-- `ARCH_05_HANDOFF_SWARM`
-- `ARCH_06_PARALLEL_FANOUT_FANIN`
-- `ARCH_07_MAP_REDUCE_AGENTIC`
-- `ARCH_08_DEBATE_JUDGE`
-
-El estado actual del repositorio deja prototipos funcionales para una matriz de 5 frameworks x 8 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos, y mantienen rutas de proveedor real mediante las primitivas propias de cada framework.
-
-| Framework | ARCH_01 | ARCH_02 | ARCH_03 | ARCH_04 | ARCH_05 | ARCH_06 | ARCH_07 | ARCH_08 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LangGraph | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
-| CrewAI | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
-| Microsoft Agent Framework | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
-| LlamaIndex | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
-| Pydantic AI | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
-
-Total actual:
-
 ```text
-5 frameworks x 8 arquitecturas = 40 implementaciones
+benchmark_core/     Contratos, schemas, métricas, trazas y escritura de resultados
+configs/            Configuración común de los experimentos
+docs/               Metodología, decisiones y especificaciones
+implementations/    Implementaciones separadas por framework y arquitectura
+scripts/            Smokes locales y smokes con OpenAI
+tests/              Tests contractuales, estructurales y de métricas
+datasets/           Datasets raw y procesados
+results/            Resultados raw, resultados procesados y figuras
+notebooks/          Análisis y visualizaciones
 ```
 
-## Instalacion base
+## Instalación
 
-Se requiere Python 3.11 o superior.
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
+El proyecto requiere Python 3.11 o superior.
 
 En Windows PowerShell:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
+pip install -e ".[dev,all-frameworks]"
 ```
 
-Para instalar dependencias especificas de un framework:
+En Linux o macOS:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev,all-frameworks]"
+```
+
+También se puede instalar solo el framework que se quiera probar:
 
 ```powershell
 pip install -e ".[langgraph]"
-pip install -e ".[crewai]"
 pip install -e ".[microsoft_agent_framework]"
+pip install -e ".[crewai]"
 pip install -e ".[llamaindex]"
 pip install -e ".[pydantic_ai]"
 ```
 
-Para instalar todos los frameworks declarados:
+## Tests
+
+La suite completa se ejecuta con:
 
 ```powershell
-pip install -e ".[dev,all-frameworks]"
-```
-
-## Ejecutar tests
-
-```bash
 python -m pytest
 ```
 
-## Ejecutar smoke tests
+Los tests comprueban el contrato común, la estructura de las arquitecturas, el orden de los pasos, la instrumentación y el guardado de resultados. Las pruebas normales utilizan el modelo determinista y no necesitan una API externa.
+
+## Smokes locales
+
+Actualmente hay smokes locales para las tres primeras arquitecturas:
 
 ```powershell
 python scripts\run_arch01_smoke.py
@@ -100,54 +142,35 @@ python scripts\run_arch02_smoke.py
 python scripts\run_arch03_smoke.py
 ```
 
-Cada script ejecuta la arquitectura correspondiente en los cinco frameworks y guarda resultados raw bajo `results/raw/`.
+Cada script ejecuta el mismo caso en los cinco frameworks y guarda los JSON bajo `results/raw/`.
 
-Para validar llamadas reales a OpenAI en `ARCH_01_SINGLE_REACT` para los cinco frameworks:
+## Smokes con OpenAI
+
+Las pruebas con OpenAI requieren un archivo `.env` con, al menos:
+
+```dotenv
+OPENAI_API_KEY=...
+MODEL_NAME=...
+```
+
+Los smokes disponibles son:
 
 ```powershell
 python scripts\run_arch01_openai_smoke.py
-```
-
-Este script requiere `.env` con `OPENAI_API_KEY` y usa `MODEL_NAME` si esta definido.
-
-Para validar el fan-out/fan-in real, las cinco llamadas por framework y las
-metricas por rama de `ARCH_06_PARALLEL_FANOUT_FANIN`:
-
-```powershell
 python scripts\run_arch06_openai_smoke.py
-```
-
-Ademas de guardar los resultados raw, el script comprueba que los cinco
-adaptadores usan exclusivamente el conteo real del proveedor (`openai_usage`).
-El proxy por palabras se reserva para ejecuciones locales deterministas y no se
-debe mezclar con resultados OpenAI.
-
-Para ejecutar una prueba OpenAI basica de `ARCH_07_MAP_REDUCE_AGENTIC` con siete
-documentos sinteticos, tres batches y cuatro llamadas por framework:
-
-```powershell
 python scripts\run_arch07_openai_smoke.py
-```
-
-Para validar las tres propuestas, la ronda de critica, el juez y las cinco
-llamadas OpenAI por framework de `ARCH_08_DEBATE_JUDGE`:
-
-```powershell
 python scripts\run_arch08_openai_smoke.py
 ```
 
-## Organizacion de experimentos
+- ARCH_01 comprueba la ruta OpenAI básica de los cinco adaptadores.
+- ARCH_06 comprueba el fan-out/fan-in y el solapamiento temporal de las ramas.
+- ARCH_07 utiliza siete documentos sintéticos, tres batches y un reducer final.
+- ARCH_08 comprueba las propuestas independientes, la crítica cruzada y la decisión del juez.
 
-Todas las arquitecturas deben exponer una funcion:
+Estos scripts también verifican que todas las llamadas tengan tokens reales `openai_usage` y que el resultado se haya guardado correctamente.
 
-```python
-run_architecture(input_data: ExperimentInput, config: ExperimentConfig) -> ExperimentResult
-```
+## Situación del proyecto
 
-Todas las entradas y salidas deben usar los schemas de `benchmark_core`. Las metricas se recogen mediante utilidades comunes y los resultados raw se guardan siempre en:
+La parte de implementación de las ocho arquitecturas está completa en los cinco frameworks. Los tests contractuales y los smokes básicos con OpenAI están funcionando.
 
-```text
-results/raw/{framework}/{architecture}/{run_id}.json
-```
-
-Si se introducen prompts, datasets, configuraciones u optimizaciones diferentes por framework, tiene que quedar justificado y documentado en `docs/decisions.md`, para que la comparacion siga siendo trazable y lo mas justa posible.
+La siguiente fase es preparar los experimentos sobre datasets públicos versionados, ejecutar suficientes repeticiones y analizar los resultados sin mezclar ejecuciones locales, smokes y benchmarks definitivos.
