@@ -30,21 +30,26 @@ Arquitecturas que ya estan implementadas:
 - `ARCH_01_SINGLE_REACT`
 - `ARCH_02_SEQUENTIAL_PIPELINE`
 - `ARCH_03_ROUTER_SPECIALISTS`
+- `ARCH_04_SUPERVISOR_WORKERS`
+- `ARCH_05_HANDOFF_SWARM`
+- `ARCH_06_PARALLEL_FANOUT_FANIN`
+- `ARCH_07_MAP_REDUCE_AGENTIC`
+- `ARCH_08_DEBATE_JUDGE`
 
-El estado actual del repositorio ya deja prototipos minimos funcionales para la matriz inicial completa de 5 frameworks x 3 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Los tres frameworks nuevos tambien tienen una ruta OpenAI real para las arquitecturas implementadas, usando las primitivas propias de cada framework.
+El estado actual del repositorio deja prototipos funcionales para una matriz de 5 frameworks x 8 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos, y mantienen rutas de proveedor real mediante las primitivas propias de cada framework.
 
-| Framework | `ARCH_01_SINGLE_REACT` | `ARCH_02_SEQUENTIAL_PIPELINE` | `ARCH_03_ROUTER_SPECIALISTS` |
-| --- | --- | --- | --- |
-| LangGraph | Implementada | Implementada | Implementada |
-| CrewAI | Implementada | Implementada | Implementada |
-| Microsoft Agent Framework | Implementada | Implementada | Implementada |
-| LlamaIndex | Implementada | Implementada | Implementada |
-| Pydantic AI | Implementada | Implementada | Implementada |
+| Framework | ARCH_01 | ARCH_02 | ARCH_03 | ARCH_04 | ARCH_05 | ARCH_06 | ARCH_07 | ARCH_08 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| LangGraph | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
+| CrewAI | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
+| Microsoft Agent Framework | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
+| LlamaIndex | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
+| Pydantic AI | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada | Implementada |
 
 Total actual:
 
 ```text
-5 frameworks x 3 arquitecturas = 15 implementaciones
+5 frameworks x 8 arquitecturas = 40 implementaciones
 ```
 
 ## Instalacion base
@@ -104,6 +109,32 @@ python scripts\run_arch01_openai_smoke.py
 ```
 
 Este script requiere `.env` con `OPENAI_API_KEY` y usa `MODEL_NAME` si esta definido.
+
+Para validar el fan-out/fan-in real, las cinco llamadas por framework y las
+metricas por rama de `ARCH_06_PARALLEL_FANOUT_FANIN`:
+
+```powershell
+python scripts\run_arch06_openai_smoke.py
+```
+
+Ademas de guardar los resultados raw, el script comprueba que los cinco
+adaptadores usan exclusivamente el conteo real del proveedor (`openai_usage`).
+El proxy por palabras se reserva para ejecuciones locales deterministas y no se
+debe mezclar con resultados OpenAI.
+
+Para ejecutar una prueba OpenAI basica de `ARCH_07_MAP_REDUCE_AGENTIC` con siete
+documentos sinteticos, tres batches y cuatro llamadas por framework:
+
+```powershell
+python scripts\run_arch07_openai_smoke.py
+```
+
+Para validar las tres propuestas, la ronda de critica, el juez y las cinco
+llamadas OpenAI por framework de `ARCH_08_DEBATE_JUDGE`:
+
+```powershell
+python scripts\run_arch08_openai_smoke.py
+```
 
 ## Organizacion de experimentos
 
