@@ -10,8 +10,11 @@ from typing import Any, Callable
 from pydantic import PrivateAttr
 
 from benchmark_core.llm_wrapper import InstrumentedLLM, build_llm_from_config
+from benchmark_core.llm_wrapper import LLMCallRecord, estimate_token_usage
+from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
+from benchmark_core.result_writer import save_result_json
 from benchmark_core.schemas import (
     AgentStep,
     ExperimentConfig,
@@ -21,6 +24,7 @@ from benchmark_core.schemas import (
     LLMCallMetrics,
     ResourceUsage,
     RunStatus,
+    TokenUsage,
 )
 from benchmark_core.tracing import utc_now
 
@@ -135,6 +139,47 @@ def create_benchmark_crewai_llm(
         ) -> str:
             prompt = messages_to_text(messages)
             call_number = len(self._call_records) + 1
+            deterministic_response = build_crewai_native_hierarchical_response(
+                prompt=prompt,
+                input_data=self._input_data,
+                config=self._config,
+                from_agent=from_agent,
+                tools=tools,
+            )
+            if deterministic_response is not None:
+                token_usage = TokenUsage(
+                    input_tokens=estimate_token_usage(prompt),
+                    output_tokens=estimate_token_usage(deterministic_response),
+                    total_tokens=estimate_token_usage(prompt) + estimate_token_usage(deterministic_response),
+                )
+                call_record = LLMCallRecord(
+                    model_name=self._instrumented_llm.model_name,
+                    prompt=prompt,
+                    response=deterministic_response,
+                    metrics=LLMCallMetrics(
+                        call_id=f"{self._config.run_id}-llm-{call_number:03d}",
+                        step_id=call_number,
+                        model_provider=self._instrumented_llm.model_provider,
+                        model_name=self._instrumented_llm.model_name,
+                        latency_seconds=0.0,
+                        token_usage=token_usage,
+                        estimated_cost_usd=estimate_cost_usd(
+                            token_usage,
+                            input_cost_per_1k=self._instrumented_llm.input_cost_per_1k,
+                            output_cost_per_1k=self._instrumented_llm.output_cost_per_1k,
+                        ),
+                        finish_reason="stop",
+                        metadata={
+                            "deterministic": True,
+                            "token_counting_method": "whitespace_proxy",
+                            "framework_api": "crewai_native_hierarchical",
+                            "crewai_from_agent_role": getattr(from_agent, "role", None),
+                        },
+                    ),
+                )
+                self._call_records.append(call_record)
+                return call_record.response
+
             call_record = self._instrumented_llm.complete(
                 prompt=prompt,
                 input_data=self._input_data,
@@ -151,6 +196,115 @@ def create_benchmark_crewai_llm(
     )
 
 
+def build_crewai_native_hierarchical_response(
+    *,
+    prompt: str,
+    input_data: ExperimentInput,
+    config: ExperimentConfig,
+    from_agent: Any = None,
+    tools: Any = None,
+) -> str | None:
+    """Return local deterministic responses for CrewAI's native hierarchical manager."""
+
+    if config.model_provider.lower() == "openai" or "ARCH_04_SUPERVISOR_WORKERS" not in prompt:
+        return None
+
+    role = getattr(from_agent, "role", "") or ""
+    if not role:
+        for candidate_role in ["Supervisor", "DataWorker", "ReasoningWorker", "ValidationWorker", "SynthesisWorker"]:
+            if f"You are {candidate_role}." in prompt:
+                role = candidate_role
+                break
+    document_ids_text = ", ".join(document_ids(input_data)) if input_data.documents else "no-documents"
+    evidence = (
+        input_data.documents[0].content.strip().replace("\n", " ")[:240]
+        if input_data.documents
+        else "No document context was provided."
+    )
+
+    if role == "DataWorker":
+        return f"DataWorker output: sources={document_ids_text}; evidence={evidence}"
+    if role == "ReasoningWorker":
+        return (
+            "ReasoningWorker output: the task can be answered from the approved evidence. "
+            f"The relevant sources are {document_ids_text}."
+        )
+    if role == "ValidationWorker":
+        return (
+            "ValidationWorker output: no contradictions detected; confidence=high; "
+            "limitations=synthetic deterministic benchmark case."
+        )
+    if role == "SynthesisWorker":
+        return (
+            "SynthesisWorker output: Final Answer: The native CrewAI hierarchical manager delegated "
+            "work to the available workers and reviewed their responses. "
+            f"Sources used: {document_ids_text}."
+        )
+
+    has_delegation_tools = (
+        tools is not None
+        or "Delegate work to coworker" in prompt
+        or "delegate_work_to_coworker" in prompt
+    )
+    if role == "Supervisor" and has_delegation_tools:
+        query_text = f"{input_data.query} {input_data.task_type}".lower()
+        needs_validation = any(
+            keyword in query_text
+            for keyword in [
+                "valid",
+                "confidence",
+                "confianza",
+                "risk",
+                "riesgo",
+                "error",
+                "crit",
+                "compar",
+                "evaluate",
+                "evaluacion",
+                "evaluar",
+                "revis",
+                "contradic",
+            ]
+        )
+
+        def delegate(coworker: str, task: str) -> str:
+            return (
+                f"Thought: I should delegate this part to {coworker} and then validate the outcome.\n"
+                "Action: delegate_work_to_coworker\n"
+                f"Action Input: {{\"coworker\": \"{coworker}\", \"task\": \"{task}\", "
+                f"\"context\": \"ARCH_04_SUPERVISOR_WORKERS case {input_data.case_id}. "
+                f"Question: {input_data.query}. Sources: {document_ids_text}.\"}}"
+            )
+
+        if (
+            "MUST give your absolute best final answer" in prompt
+            or '"coworker": "SynthesisWorker"' in prompt
+            or "SynthesisWorker output:" in prompt
+        ):
+            return (
+                "Thought: I now know the final answer\n"
+                "Final Answer: The native CrewAI hierarchical manager coordinated the workers, "
+                "validated the available outcomes, and approved the final answer. "
+                f"Sources used: {document_ids_text}."
+            )
+        if input_data.documents and "DataWorker output:" not in prompt:
+            return delegate("DataWorker", "Extract evidence and cite source ids.")
+        if "ReasoningWorker output:" not in prompt:
+            return delegate("ReasoningWorker", "Reason over the approved evidence and query.")
+        if needs_validation and "ValidationWorker output:" not in prompt:
+            return delegate("ValidationWorker", "Validate the reasoning and identify limitations.")
+        if "SynthesisWorker output:" not in prompt:
+            return delegate("SynthesisWorker", "Synthesize the approved outputs into the final answer.")
+        return (
+            "Thought: I now know the final answer\n"
+            "Final Answer: The native CrewAI hierarchical manager coordinated the workers, "
+            "validated the available outcomes, and approved the final answer. "
+            f"Sources used: {document_ids_text}."
+        )
+
+    return None
+
+
 def get_llm_call_metrics(crewai_llm: Any) -> list[LLMCallMetrics]:
     return [record.metrics for record in crewai_llm.call_records]
 
@@ -162,6 +316,8 @@ def create_agent(
     backstory: str,
     crewai_llm: Any,
     config: ExperimentConfig,
+    allow_delegation: bool = False,
+    max_iter: int | None = None,
 ):
     from crewai import Agent
 
@@ -171,8 +327,8 @@ def create_agent(
         backstory=backstory,
         llm=crewai_llm,
         verbose=False,
-        max_iter=config.max_agent_iterations,
-        allow_delegation=False,
+        max_iter=max_iter or config.max_agent_iterations,
+        allow_delegation=allow_delegation,
         max_retry_limit=config.retry_count,
         memory=False,
     )
@@ -182,7 +338,7 @@ def create_task(
     *,
     description: str,
     expected_output: str,
-    agent: Any,
+    agent: Any | None,
     config: ExperimentConfig,
     context: list[Any] | None = None,
 ):
@@ -208,6 +364,23 @@ def create_sequential_crew(*, agents: list[Any], tasks: list[Any]):
         memory=False,
         cache=False,
         tracing=False,
+    )
+
+
+def create_hierarchical_crew(*, agents: list[Any], tasks: list[Any], manager_agent: Any):
+    from crewai import Crew, Process
+
+    return Crew(
+        agents=agents,
+        tasks=tasks,
+        manager_agent=manager_agent,
+        process=Process.hierarchical,
+        verbose=False,
+        memory=False,
+        cache=False,
+        planning=False,
+        tracing=False,
+        checkpoint=False,
     )
 
 
@@ -269,7 +442,7 @@ def crewai_architecture_runner(run_impl: CrewAIImplementation):
             steps = []
             llm_calls = []
 
-        return build_experiment_result(
+        result = build_experiment_result(
             input_data=input_data,
             config=config,
             status=status,
@@ -284,5 +457,7 @@ def crewai_architecture_runner(run_impl: CrewAIImplementation):
             environment_packages=["crewai"],
             repo_root=repo_root,
         )
+        save_result_json(result, base_dir=repo_root / "results" / "raw")
+        return result
 
     return wrapper

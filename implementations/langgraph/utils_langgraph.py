@@ -9,6 +9,7 @@ from typing import Any, Callable
 from benchmark_core.llm_wrapper import InstrumentedLLM, build_llm_from_config
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
+from benchmark_core.result_writer import save_result_json
 from benchmark_core.schemas import (
     AgentStep,
     ExperimentConfig,
@@ -123,7 +124,7 @@ def langgraph_architecture_runner(run_impl: LangGraphImplementation):
             steps = []
             llm_calls = []
 
-        return build_experiment_result(
+        result = build_experiment_result(
             input_data=input_data,
             config=config,
             status=status,
@@ -138,5 +139,7 @@ def langgraph_architecture_runner(run_impl: LangGraphImplementation):
             environment_packages=["langgraph"],
             repo_root=repo_root,
         )
+        save_result_json(result, base_dir=repo_root / "results" / "raw")
+        return result
 
     return wrapper

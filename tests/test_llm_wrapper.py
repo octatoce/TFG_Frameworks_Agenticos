@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from benchmark_core.llm_wrapper import OpenAIInstrumentedLLM, parse_worker_selection
+from benchmark_core.llm_wrapper import OpenAIInstrumentedLLM, parse_specialist_selection
 
 
 def test_openai_instrumented_llm_extracts_usage() -> None:
@@ -24,16 +24,16 @@ def test_openai_instrumented_llm_extracts_usage() -> None:
     assert usage.total_tokens == 15
 
 
-def test_parse_worker_selection_from_supervisor_output() -> None:
-    selected, skipped = parse_worker_selection(
+def test_parse_specialist_selection_from_router_output() -> None:
+    selected, skipped = parse_specialist_selection(
         "\n".join(
             [
-                "SELECTED_WORKERS=data_worker, reasoning_worker",
-                "SKIPPED_WORKERS=validation_worker",
+                "SELECTED_SPECIALISTS=data_specialist, reasoning_specialist",
+                "SKIPPED_SPECIALISTS=validation_specialist",
                 "RATIONALE=Simple evidence question.",
             ]
         )
     )
 
-    assert selected == ["data_worker", "reasoning_worker"]
-    assert skipped == ["validation_worker"]
+    assert selected == ["data_specialist", "reasoning_specialist"]
+    assert skipped == ["validation_specialist"]

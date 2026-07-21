@@ -9,6 +9,11 @@ from time import perf_counter
 
 from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.schemas import ExperimentConfig, ExperimentInput, LLMCallMetrics, TokenUsage
+from benchmark_core.handoff_swarm import (
+    AGENT_DISPLAY_NAMES,
+    HANDOFF_AGENTS,
+    build_deterministic_handoff_output,
+)
 
 
 @dataclass
@@ -65,12 +70,12 @@ def render_sequential_pipeline_prompt(
     )
 
 
-def render_supervisor_workers_prompt(
+def render_router_specialists_prompt(
     input_data: ExperimentInput,
     phase: str,
     state: dict[str, object],
 ) -> str:
-    """Render a canonical ARCH_03 supervisor/workers prompt."""
+    """Render a canonical ARCH_03 router/specialists prompt."""
 
     document_blocks = "\n".join(
         f"[{document.document_id}] {document.content}" for document in input_data.documents
@@ -79,18 +84,18 @@ def render_supervisor_workers_prompt(
         document_blocks = "No documents provided."
 
     return (
-        "You are executing ARCH_03_SUPERVISOR_WORKERS for a benchmark.\n"
-        f"Supervisor phase: {phase}\n"
+        "You are executing ARCH_03_ROUTER_SPECIALISTS for a benchmark.\n"
+        f"Router phase: {phase}\n"
         "Return only the output for this role. Keep it concise and traceable.\n\n"
-        "For supervisor_planning, use exactly this format:\n"
-        "SELECTED_WORKERS=comma_separated_worker_ids\n"
-        "SKIPPED_WORKERS=comma_separated_worker_ids_or_none\n"
+        "For router_routing, use exactly this format:\n"
+        "SELECTED_SPECIALISTS=comma_separated_specialist_ids\n"
+        "SKIPPED_SPECIALISTS=comma_separated_specialist_ids_or_none\n"
         "RATIONALE=one short sentence\n\n"
-        "Available workers: data_worker, reasoning_worker, validation_worker.\n\n"
+        "Available specialists: data_specialist, reasoning_specialist, validation_specialist.\n\n"
         f"Task type: {input_data.task_type}\n"
         f"Question: {input_data.query}\n\n"
-        f"Selected workers:\n{state.get('selected_workers') or 'None'}\n\n"
-        f"Skipped workers:\n{state.get('skipped_workers') or 'None'}\n\n"
+        f"Selected specialists:\n{state.get('selected_specialists') or 'None'}\n\n"
+        f"Skipped specialists:\n{state.get('skipped_specialists') or 'None'}\n\n"
         f"Evidence:\n{state.get('evidence') or 'None'}\n\n"
         f"Preliminary decision:\n{state.get('preliminary_decision') or 'None'}\n\n"
         f"Validation report:\n{state.get('validation_report') or 'None'}\n\n"
@@ -98,15 +103,80 @@ def render_supervisor_workers_prompt(
     )
 
 
-def choose_supervisor_workers(input_data: ExperimentInput) -> tuple[list[str], list[str], str]:
-    """Choose ARCH_03 workers for the deterministic local supervisor."""
+SUPERVISOR_WORKERS = ["data_worker", "reasoning_worker", "validation_worker", "synthesis_worker"]
 
-    available_workers = ["data_worker", "reasoning_worker", "validation_worker"]
+
+def render_supervisor_workers_prompt(
+    input_data: ExperimentInput,
+    phase: str,
+    state: dict[str, object],
+    *,
+    worker_name: str | None = None,
+    task: str | None = None,
+    revision_instructions: str | None = None,
+) -> str:
+    """Render a canonical ARCH_04 supervisor/workers prompt."""
+
+    document_blocks = "\n".join(
+        f"[{document.document_id}] {document.content}" for document in input_data.documents
+    )
+    if not document_blocks:
+        document_blocks = "No documents provided."
+
+    worker_outputs = state.get("worker_outputs") or []
+    executed_workers = state.get("workers_executed") or []
+    plan = state.get("plan") or {}
+    plan_workers = []
+    if isinstance(plan, dict):
+        plan_workers = list(plan.get("workers_to_run") or [])
+
+    return (
+        "You are executing ARCH_04_SUPERVISOR_WORKERS for a benchmark.\n"
+        f"Supervisor phase: {phase}\n"
+        "The supervisor must actively plan, review worker outputs, request bounded revisions if needed, "
+        "and decide when to finalize.\n\n"
+        "For supervisor_plan, use exactly this format:\n"
+        "WORKERS_TO_RUN=comma_separated_worker_ids\n"
+        "TASK_ASSIGNMENT_<worker_id>=short task\n"
+        "EXPECTED_OUTPUT_<worker_id>=short expected output\n"
+        "QUALITY_CRITERIA=comma_separated_criteria\n\n"
+        "For supervisor_decision, use exactly this format:\n"
+        "ACCEPTED=true_or_false\n"
+        "NEEDS_REVISION=true_or_false\n"
+        "REVISION_INSTRUCTIONS=short instructions or none\n"
+        "MISSING_INFORMATION=short note or none\n"
+        "ACTION=run_worker|request_revision|finalize\n"
+        "WORKER_NAME=worker_id_or_none\n"
+        "TASK=short task or none\n"
+        "STOP_REASON=short reason or none\n\n"
+        "For worker phases, return only the requested worker output. "
+        "For synthesis_worker and supervisor_finalize, include 'Final Answer:' when producing the final answer.\n\n"
+        f"Available workers: {', '.join(SUPERVISOR_WORKERS)}.\n"
+        f"Task type: {input_data.task_type}\n"
+        f"Question: {input_data.query}\n\n"
+        f"Current iteration: {state.get('iterations', 0)}\n"
+        f"Max supervisor iterations: {state.get('max_supervisor_iterations', 3)}\n"
+        f"Plan workers: {', '.join(plan_workers) if plan_workers else 'None'}\n"
+        f"Executed workers: {', '.join(executed_workers) if executed_workers else 'None'}\n"
+        f"Revisions requested: {state.get('revisions_requested', 0)}\n"
+        f"Current worker: {worker_name or 'None'}\n"
+        f"Current task: {task or 'None'}\n"
+        f"Revision instructions: {revision_instructions or 'None'}\n\n"
+        f"Worker outputs:\n{worker_outputs or 'None'}\n\n"
+        f"Warnings:\n{state.get('warnings') or 'None'}\n\n"
+        f"Documents:\n{document_blocks}\n"
+    )
+
+
+def choose_router_specialists(input_data: ExperimentInput) -> tuple[list[str], list[str], str]:
+    """Choose ARCH_03 specialists for the deterministic local router."""
+
+    available_specialists = ["data_specialist", "reasoning_specialist", "validation_specialist"]
     query_text = f"{input_data.query} {input_data.task_type}".lower()
-    selected_workers = ["reasoning_worker"]
+    selected_specialists = ["reasoning_specialist"]
 
     if input_data.documents:
-        selected_workers.insert(0, "data_worker")
+        selected_specialists.insert(0, "data_specialist")
 
     validation_keywords = [
         "valid",
@@ -122,35 +192,72 @@ def choose_supervisor_workers(input_data: ExperimentInput) -> tuple[list[str], l
         "evaluar",
     ]
     if any(keyword in query_text for keyword in validation_keywords):
-        selected_workers.append("validation_worker")
+        selected_specialists.append("validation_specialist")
 
-    selected_workers = [
-        worker for worker in available_workers if worker in selected_workers
+    selected_specialists = [
+        specialist for specialist in available_specialists if specialist in selected_specialists
     ]
-    skipped_workers = [
-        worker for worker in available_workers if worker not in selected_workers
+    skipped_specialists = [
+        specialist for specialist in available_specialists if specialist not in selected_specialists
     ]
 
     if not input_data.documents:
         rationale = "No documents were provided, so data retrieval is skipped."
-    elif "validation_worker" in selected_workers:
+    elif "validation_specialist" in selected_specialists:
         rationale = "The query benefits from evidence, reasoning, and validation."
     else:
         rationale = "The query can be answered with evidence and reasoning only."
 
-    return selected_workers, skipped_workers, rationale
+    return selected_specialists, skipped_specialists, rationale
 
 
-def parse_worker_selection(
-    supervisor_output: str,
-    available_workers: list[str] | None = None,
+def choose_supervisor_workers(input_data: ExperimentInput) -> tuple[list[str], list[str], str]:
+    """Choose ARCH_04 workers for the deterministic local supervisor."""
+
+    query_text = f"{input_data.query} {input_data.task_type}".lower()
+    workers_to_run = ["reasoning_worker", "synthesis_worker"]
+    if input_data.documents:
+        workers_to_run.insert(0, "data_worker")
+
+    validation_keywords = [
+        "valid",
+        "confidence",
+        "confianza",
+        "risk",
+        "riesgo",
+        "error",
+        "crit",
+        "compar",
+        "evaluate",
+        "evaluacion",
+        "evaluar",
+        "revis",
+        "contradic",
+    ]
+    if any(keyword in query_text for keyword in validation_keywords):
+        workers_to_run.insert(-1, "validation_worker")
+
+    workers_to_run = [worker for worker in SUPERVISOR_WORKERS if worker in workers_to_run]
+    workers_not_used = [worker for worker in SUPERVISOR_WORKERS if worker not in workers_to_run]
+    if "validation_worker" in workers_to_run:
+        rationale = "The task benefits from evidence, reasoning, validation, and supervised synthesis."
+    elif input_data.documents:
+        rationale = "The task needs evidence extraction, reasoning, and synthesis."
+    else:
+        rationale = "No documents were provided, so the supervisor skips evidence extraction."
+    return workers_to_run, workers_not_used, rationale
+
+
+def parse_specialist_selection(
+    router_output: str,
+    available_specialists: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Parse and normalize supervisor worker selection output."""
+    """Parse and normalize router specialist selection output."""
 
-    workers = available_workers or ["data_worker", "reasoning_worker", "validation_worker"]
+    specialists = available_specialists or ["data_specialist", "reasoning_specialist", "validation_specialist"]
 
     def parse_line(name: str) -> list[str]:
-        match = re.search(rf"^{name}\s*=\s*(.+)$", supervisor_output, flags=re.MULTILINE)
+        match = re.search(rf"^{name}\s*=\s*(.+)$", router_output, flags=re.MULTILINE)
         if not match:
             return []
         raw_items = re.split(r"[,;]", match.group(1).strip())
@@ -160,19 +267,97 @@ def parse_worker_selection(
             if item.strip() and item.strip().lower() not in {"none", "null", "[]"}
         ]
 
-    selected = [worker for worker in parse_line("SELECTED_WORKERS") if worker in workers]
-    skipped = [worker for worker in parse_line("SKIPPED_WORKERS") if worker in workers]
+    selected = [specialist for specialist in parse_line("SELECTED_SPECIALISTS") if specialist in specialists]
+    skipped = [specialist for specialist in parse_line("SKIPPED_SPECIALISTS") if specialist in specialists]
 
     if not selected:
-        selected = [worker for worker in workers if worker in supervisor_output]
+        selected = [specialist for specialist in specialists if specialist in router_output]
 
     if not selected:
-        selected = list(workers)
+        selected = list(specialists)
 
-    selected = [worker for worker in workers if worker in selected]
-    skipped = [worker for worker in workers if worker not in selected or worker in skipped]
-    skipped = [worker for worker in workers if worker in skipped and worker not in selected]
+    selected = [specialist for specialist in specialists if specialist in selected]
+    skipped = [specialist for specialist in specialists if specialist not in selected or specialist in skipped]
+    skipped = [specialist for specialist in specialists if specialist in skipped and specialist not in selected]
     return selected, skipped
+
+
+def parse_supervisor_plan(plan_output: str) -> dict[str, object]:
+    """Parse and normalize an ARCH_04 supervisor plan."""
+
+    def parse_line(name: str) -> str | None:
+        match = re.search(rf"^{name}\s*=\s*(.+)$", plan_output, flags=re.MULTILINE)
+        return match.group(1).strip() if match else None
+
+    workers_line = parse_line("WORKERS_TO_RUN") or ""
+    workers_to_run = [
+        item.strip()
+        for item in re.split(r"[,;]", workers_line)
+        if item.strip() in SUPERVISOR_WORKERS
+    ]
+    if not workers_to_run:
+        workers_to_run = [worker for worker in SUPERVISOR_WORKERS if worker in plan_output]
+    if not workers_to_run:
+        workers_to_run = ["reasoning_worker", "synthesis_worker"]
+
+    task_assignments = {
+        worker: parse_line(f"TASK_ASSIGNMENT_{worker}") or f"Complete the {worker} responsibility."
+        for worker in workers_to_run
+    }
+    expected_outputs = {
+        worker: parse_line(f"EXPECTED_OUTPUT_{worker}") or f"Concise {worker} output."
+        for worker in workers_to_run
+    }
+    criteria_line = parse_line("QUALITY_CRITERIA") or "evidence, consistency, completeness, clarity"
+    quality_criteria = [
+        item.strip()
+        for item in re.split(r"[,;]", criteria_line)
+        if item.strip()
+    ]
+    return {
+        "workers_to_run": workers_to_run,
+        "task_assignments": task_assignments,
+        "expected_outputs": expected_outputs,
+        "quality_criteria": quality_criteria,
+        "raw_plan": plan_output,
+    }
+
+
+def parse_supervisor_action(action_output: str) -> dict[str, object]:
+    """Parse and normalize an ARCH_04 supervisor decision/review."""
+
+    def parse_line(name: str) -> str | None:
+        match = re.search(rf"^{name}\s*=\s*(.+)$", action_output, flags=re.MULTILINE)
+        return match.group(1).strip() if match else None
+
+    def parse_bool(value: str | None) -> bool:
+        return (value or "").strip().lower() in {"true", "yes", "1", "accepted", "si", "sí"}
+
+    action = (parse_line("ACTION") or "").lower()
+    if action not in {"run_worker", "request_revision", "finalize"}:
+        lowered = action_output.lower()
+        if "request_revision" in lowered or "revision" in lowered:
+            action = "request_revision"
+        elif "finalize" in lowered or "final answer" in lowered:
+            action = "finalize"
+        else:
+            action = "run_worker"
+
+    worker_name = parse_line("WORKER_NAME") or None
+    if worker_name not in SUPERVISOR_WORKERS:
+        worker_name = None
+
+    return {
+        "accepted": parse_bool(parse_line("ACCEPTED")),
+        "needs_revision": parse_bool(parse_line("NEEDS_REVISION")),
+        "revision_instructions": parse_line("REVISION_INSTRUCTIONS") or "none",
+        "missing_information": parse_line("MISSING_INFORMATION") or "none",
+        "action": action,
+        "worker_name": worker_name,
+        "task": parse_line("TASK") or "none",
+        "stop_reason": parse_line("STOP_REASON") or "none",
+        "raw_decision": action_output,
+    }
 
 
 def build_deterministic_answer(input_data: ExperimentInput) -> str:
@@ -232,7 +417,7 @@ def build_deterministic_pipeline_output(
     return build_deterministic_answer(input_data)
 
 
-def build_deterministic_supervisor_output(
+def build_deterministic_router_output(
     input_data: ExperimentInput,
     phase: str,
 ) -> str:
@@ -246,40 +431,167 @@ def build_deterministic_supervisor_output(
         evidence = "No document context was provided."
 
     normalized_phase = phase.lower()
-    if normalized_phase == "supervisor_planning":
-        selected_workers, skipped_workers, rationale = choose_supervisor_workers(input_data)
-        skipped_text = ", ".join(skipped_workers) if skipped_workers else "none"
+    if normalized_phase == "router_routing":
+        selected_specialists, skipped_specialists, rationale = choose_router_specialists(input_data)
+        skipped_text = ", ".join(skipped_specialists) if skipped_specialists else "none"
         return (
-            f"SELECTED_WORKERS={', '.join(selected_workers)}\n"
-            f"SKIPPED_WORKERS={skipped_text}\n"
+            f"SELECTED_SPECIALISTS={', '.join(selected_specialists)}\n"
+            f"SKIPPED_SPECIALISTS={skipped_text}\n"
             f"RATIONALE={rationale}"
         )
-    if normalized_phase == "data_worker":
+    if normalized_phase == "data_specialist":
         return f"Data report: sources={source_text}; evidence={evidence}"
-    if normalized_phase == "reasoning_worker":
+    if normalized_phase == "reasoning_specialist":
         return (
             "Reasoning report: the case asks for the benchmark objective and validation criterion. "
             f"The evidence from {source_text} supports a direct answer grounded in the provided context."
         )
-    if normalized_phase == "validation_worker":
+    if normalized_phase == "validation_specialist":
         return (
             "Validation report: the preliminary decision is consistent with the evidence; "
             "confidence=high; limitations=synthetic smoke case."
         )
-    if normalized_phase == "supervisor_synthesis":
-        selected_workers, _, _ = choose_supervisor_workers(input_data)
+    if normalized_phase == "router_synthesis":
+        selected_specialists, _, _ = choose_router_specialists(input_data)
         validation_text = (
             " and validation"
-            if "validation_worker" in selected_workers
+            if "validation_specialist" in selected_specialists
             else ""
         )
         return (
             "Final Answer: "
-            f"The supervisor integrated the selected worker reports ({', '.join(selected_workers)})"
+            f"The router integrated the selected specialist reports ({', '.join(selected_specialists)})"
             f"{validation_text}. "
             "The document states that the TFG compares modern agentic frameworks through equivalent "
             "prototypes, and the validated criterion is whether common schemas, metric collection, "
             f"comparable execution, and raw JSON persistence work correctly. Sources used: {source_text}."
+        )
+
+    return build_deterministic_answer(input_data)
+
+
+def _parse_prompt_line(prompt: str, prefix: str) -> str:
+    for line in prompt.splitlines():
+        if line.startswith(prefix):
+            return line.removeprefix(prefix).strip()
+    return ""
+
+
+def build_deterministic_supervisor_output(
+    input_data: ExperimentInput,
+    phase: str,
+    prompt: str,
+) -> str:
+    """Build a stable local output for one ARCH_04 supervisor/worker phase."""
+
+    document_ids = [document.document_id for document in input_data.documents]
+    source_text = ", ".join(document_ids) if document_ids else "no-documents"
+    if input_data.documents:
+        evidence = input_data.documents[0].content.strip().replace("\n", " ")[:240]
+    else:
+        evidence = "No document context was provided."
+
+    normalized_phase = phase.lower()
+    if normalized_phase == "supervisor_plan":
+        workers_to_run, _, rationale = choose_supervisor_workers(input_data)
+        lines = [
+            f"WORKERS_TO_RUN={', '.join(workers_to_run)}",
+        ]
+        assignments = {
+            "data_worker": "Extract documentary evidence and source references.",
+            "reasoning_worker": "Analyze the evidence and answer requirements.",
+            "validation_worker": "Check contradictions, missing evidence, and risk.",
+            "synthesis_worker": "Build the final structured answer from approved material.",
+        }
+        expected_outputs = {
+            "data_worker": "Evidence report with source ids.",
+            "reasoning_worker": "Technical reasoning report.",
+            "validation_worker": "Validation report with limitations.",
+            "synthesis_worker": "Final answer draft.",
+        }
+        for worker in workers_to_run:
+            lines.append(f"TASK_ASSIGNMENT_{worker}={assignments[worker]}")
+            lines.append(f"EXPECTED_OUTPUT_{worker}={expected_outputs[worker]}")
+        lines.append("QUALITY_CRITERIA=evidence, consistency, completeness, clarity")
+        lines.append(f"RATIONALE={rationale}")
+        return "\n".join(lines)
+
+    if normalized_phase == "supervisor_decision":
+        plan_workers = [
+            item.strip()
+            for item in re.split(r"[,;]", _parse_prompt_line(prompt, "Plan workers:"))
+            if item.strip() and item.strip().lower() != "none"
+        ]
+        executed_workers = [
+            item.strip()
+            for item in re.split(r"[,;]", _parse_prompt_line(prompt, "Executed workers:"))
+            if item.strip() and item.strip().lower() != "none"
+        ]
+        current_iteration = int(_parse_prompt_line(prompt, "Current iteration:") or 0)
+        max_iterations = int(_parse_prompt_line(prompt, "Max supervisor iterations:") or 3)
+        accepted = "true" if executed_workers else "false"
+
+        next_worker = next((worker for worker in plan_workers if worker not in executed_workers), None)
+        if current_iteration >= max_iterations - 1 and next_worker != "synthesis_worker":
+            next_worker = "synthesis_worker" if "synthesis_worker" in plan_workers and "synthesis_worker" not in executed_workers else None
+
+        if next_worker is None:
+            return (
+                f"ACCEPTED={accepted}\n"
+                "NEEDS_REVISION=false\n"
+                "REVISION_INSTRUCTIONS=none\n"
+                "MISSING_INFORMATION=none\n"
+                "ACTION=finalize\n"
+                "WORKER_NAME=none\n"
+                "TASK=none\n"
+                "STOP_REASON=quality_criteria_satisfied"
+            )
+
+        tasks = {
+            "data_worker": "Extract evidence and cite source ids.",
+            "reasoning_worker": "Reason over the approved evidence and query.",
+            "validation_worker": "Validate the reasoning and identify limitations.",
+            "synthesis_worker": "Synthesize the approved outputs into the final answer.",
+        }
+        missing = "none" if executed_workers else "initial worker output required"
+        return (
+            f"ACCEPTED={accepted}\n"
+            "NEEDS_REVISION=false\n"
+            "REVISION_INSTRUCTIONS=none\n"
+            f"MISSING_INFORMATION={missing}\n"
+            "ACTION=run_worker\n"
+            f"WORKER_NAME={next_worker}\n"
+            f"TASK={tasks[next_worker]}\n"
+            "STOP_REASON=none"
+        )
+
+    if normalized_phase == "worker":
+        worker_name = _parse_prompt_line(prompt, "Current worker:")
+        if worker_name == "data_worker":
+            return f"DataWorker output: sources={source_text}; evidence={evidence}"
+        if worker_name == "reasoning_worker":
+            return (
+                "ReasoningWorker output: the task can be answered from the approved evidence. "
+                f"The relevant sources are {source_text}."
+            )
+        if worker_name == "validation_worker":
+            return (
+                "ValidationWorker output: no contradictions detected; confidence=high; "
+                "limitations=synthetic deterministic benchmark case."
+            )
+        if worker_name == "synthesis_worker":
+            return (
+                "Final Answer: The supervised workers produced evidence, reasoning, and any requested validation. "
+                "The supervisor can approve a concise answer grounded in the provided documents. "
+                f"Sources used: {source_text}."
+            )
+        return build_deterministic_answer(input_data)
+
+    if normalized_phase == "supervisor_finalize":
+        return (
+            "Final Answer: The supervisor reviewed the available worker outputs and finalized the answer. "
+            "The result is grounded in the executed workers' evidence, reasoning, and synthesis. "
+            f"Sources used: {source_text}."
         )
 
     return build_deterministic_answer(input_data)
@@ -295,13 +607,44 @@ def detect_pipeline_phase(prompt: str) -> str | None:
     return None
 
 
-def detect_supervisor_phase(prompt: str) -> str | None:
+def detect_router_phase(prompt: str) -> str | None:
     """Return the ARCH_03 phase embedded in a prompt, if present."""
+
+    prefix = "Router phase:"
+    for line in prompt.splitlines():
+        if line.startswith(prefix):
+            return line.removeprefix(prefix).strip().lower()
+    return None
+
+
+def detect_supervisor_phase(prompt: str) -> str | None:
+    """Return the ARCH_04 supervisor/worker phase embedded in a prompt, if present."""
 
     prefix = "Supervisor phase:"
     for line in prompt.splitlines():
         if line.startswith(prefix):
             return line.removeprefix(prefix).strip().lower()
+    return None
+
+
+def detect_handoff_agent(prompt: str) -> str | None:
+    """Return the ARCH_05 active agent embedded in a prompt, if present."""
+
+    if "ARCH_05_HANDOFF_SWARM" not in prompt:
+        return None
+    prefix = "Active agent:"
+    for line in prompt.splitlines():
+        if line.startswith(prefix):
+            value = line.removeprefix(prefix).strip()
+            lowered = value.lower()
+            if lowered in HANDOFF_AGENTS:
+                return lowered
+            normalized = re.sub(r"[^a-z_]", "", lowered)
+            if normalized in HANDOFF_AGENTS:
+                return normalized
+            for agent_name, display_name in AGENT_DISPLAY_NAMES.items():
+                if normalized in {display_name.lower(), agent_name.replace("_", "")}:
+                    return agent_name
     return None
 
 
@@ -337,11 +680,17 @@ class InstrumentedLLM:
 
         started = perf_counter()
         phase = detect_pipeline_phase(prompt)
+        router_phase = detect_router_phase(prompt)
         supervisor_phase = detect_supervisor_phase(prompt)
+        handoff_agent = detect_handoff_agent(prompt)
         if phase is not None:
             response = build_deterministic_pipeline_output(input_data, phase)
+        elif router_phase is not None:
+            response = build_deterministic_router_output(input_data, router_phase)
         elif supervisor_phase is not None:
-            response = build_deterministic_supervisor_output(input_data, supervisor_phase)
+            response = build_deterministic_supervisor_output(input_data, supervisor_phase, prompt)
+        elif handoff_agent is not None:
+            response = build_deterministic_handoff_output(input_data, handoff_agent, prompt)
         else:
             final_answer = build_deterministic_answer(input_data)
             response = f"Thought: I can answer from the provided benchmark input.\nFinal Answer: {final_answer}"

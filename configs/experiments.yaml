@@ -6,8 +6,13 @@ defaults:
 frameworks:
   - langgraph
   - crewai
+  - microsoft_agent_framework
+  - llamaindex
+  - pydantic_ai
 
 architectures:
   - ARCH_01_SINGLE_REACT
   - ARCH_02_SEQUENTIAL_PIPELINE
-  - ARCH_03_SUPERVISOR_WORKERS
+  - ARCH_03_ROUTER_SPECIALISTS
+  - ARCH_04_SUPERVISOR_WORKERS
+  - ARCH_05_HANDOFF_SWARM

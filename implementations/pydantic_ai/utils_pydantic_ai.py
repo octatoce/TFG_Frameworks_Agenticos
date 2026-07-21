@@ -19,6 +19,7 @@ from benchmark_core.llm_wrapper import (
 from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
+from benchmark_core.result_writer import save_result_json
 from benchmark_core.schemas import (
     AgentStep,
     ExperimentConfig,
@@ -57,12 +58,137 @@ class PydanticAIPipelineOutput(PydanticAIStructuredOutput):
     analysis: str
 
 
-class PydanticAISupervisorOutput(PydanticAIStructuredOutput):
-    selected_workers: list[str]
-    skipped_workers: list[str]
+class PydanticAIRouterOutput(PydanticAIStructuredOutput):
+    selected_specialists: list[str]
+    skipped_specialists: list[str]
     evidence: str | list[Any]
     preliminary_decision: str | None
     validation_report: str | None
+
+
+class WorkerTask(BaseModel):
+    worker_name: str
+    task: str
+    expected_output: str
+
+
+class SupervisorPlan(BaseModel):
+    workers_to_run: list[str]
+    task_assignments: dict[str, str]
+    expected_outputs: dict[str, str]
+    quality_criteria: list[str]
+    raw_plan: str
+
+
+class SupervisorAction(BaseModel):
+    accepted: bool
+    needs_revision: bool
+    revision_instructions: str
+    missing_information: str
+    action: str
+    worker_name: str | None
+    task: str
+    stop_reason: str
+    raw_decision: str
+
+
+class WorkerOutput(BaseModel):
+    worker_name: str
+    task: str
+    output: str
+    revision: bool
+    iteration: int
+
+
+class SupervisorReview(BaseModel):
+    accepted: bool
+    needs_revision: bool
+    revision_instructions: str
+    missing_information: str
+    reviewed_worker: str | None = None
+
+
+class SupervisorState(BaseModel):
+    plan: SupervisorPlan | None = None
+    worker_outputs: list[WorkerOutput] = Field(default_factory=list)
+    iterations: int = 0
+    workers_executed: list[str] = Field(default_factory=list)
+    revisions_requested: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PydanticAISupervisorWorkersOutput(PydanticAIStructuredOutput):
+    supervisor_plan: SupervisorPlan
+    worker_outputs: list[WorkerOutput]
+    workers_executed: list[str]
+    number_of_workers_executed: int
+    workers_used: list[str]
+    workers_not_used: list[str]
+    supervisor_iterations: int
+    max_supervisor_iterations: int
+    revisions_requested: int
+    accepted_worker_outputs: list[str]
+    rejected_worker_outputs: list[str]
+    stop_reason: str
+    warnings: list[str]
+
+
+class HandoffDecision(BaseModel):
+    action: str
+    target_agent: str | None
+    reason: str
+    task: str
+    context_summary: str
+    final_output: str
+    confidence: float
+    evidence: str
+    limitations: str
+    raw_decision: str
+
+
+class HandoffRecord(BaseModel):
+    sequence_number: int
+    source_agent: str
+    target_agent: str
+    reason: str
+    task: str
+    context_summary: str
+    timestamp: str
+
+
+class SwarmState(BaseModel):
+    active_agent: str
+    active_agent_history: list[str] = Field(default_factory=list)
+    handoff_history: list[HandoffRecord] = Field(default_factory=list)
+    partial_results: list[dict[str, Any]] = Field(default_factory=list)
+    context_transferred: str = ""
+    number_of_agent_invocations: int = 0
+    number_of_handoffs: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PydanticAIHandoffSwarmOutput(PydanticAIStructuredOutput):
+    decision: HandoffDecision
+    confidence: float
+    evidence: str
+    limitations: str
+    initial_agent: str
+    active_agent_history: list[str]
+    handoff_history: list[HandoffRecord]
+    number_of_handoffs: int
+    max_handoffs: int
+    number_of_agent_invocations: int
+    max_agent_invocations: int
+    unique_agents_executed: list[str]
+    finalizing_agent: str | None
+    repeated_agent_visits: dict[str, int]
+    cycle_detected: bool
+    fallback_used: bool
+    stop_reason: str | None
+    framework_native_primitives: list[str]
+    native_automatic_behaviors: list[str]
+    parallelism_used: bool
+    warnings: list[str]
 
 
 @dataclass
@@ -222,7 +348,7 @@ def next_step_id(state: dict[str, Any]) -> int:
 
 def framework_execution(label: str, context: PydanticAIRunContext) -> str:
     suffix = "native_available" if context.native_framework_available else "deterministic_adapter"
-    if label == "supervisor_workers" and context.native_graph_available:
+    if label == "router_specialists" and context.native_graph_available:
         suffix = f"{suffix}_graph_available"
     return f"pydantic_ai_{label}_{suffix}"
 
@@ -272,7 +398,7 @@ def pydantic_ai_architecture_runner(run_impl: PydanticAIImplementation):
             steps = []
             llm_calls = []
 
-        return build_experiment_result(
+        result = build_experiment_result(
             input_data=input_data,
             config=config,
             status=status,
@@ -287,5 +413,8 @@ def pydantic_ai_architecture_runner(run_impl: PydanticAIImplementation):
             environment_packages=["pydantic-ai", "pydantic-graph"],
             repo_root=repo_root,
         )
+        save_result_json(result, base_dir=repo_root / "results" / "raw")
+        return result
 
     return wrapper
+

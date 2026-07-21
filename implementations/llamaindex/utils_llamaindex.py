@@ -18,6 +18,7 @@ from benchmark_core.llm_wrapper import (
 from benchmark_core.metrics import estimate_cost_usd
 from benchmark_core.resource_monitor import ResourceMonitor
 from benchmark_core.result_builders import build_experiment_result
+from benchmark_core.result_writer import save_result_json
 from benchmark_core.schemas import (
     AgentStep,
     ExperimentConfig,
@@ -274,7 +275,7 @@ def llamaindex_architecture_runner(run_impl: LlamaIndexImplementation):
             steps = []
             llm_calls = []
 
-        return build_experiment_result(
+        result = build_experiment_result(
             input_data=input_data,
             config=config,
             status=status,
@@ -289,5 +290,7 @@ def llamaindex_architecture_runner(run_impl: LlamaIndexImplementation):
             environment_packages=["llama-index"],
             repo_root=repo_root,
         )
+        save_result_json(result, base_dir=repo_root / "results" / "raw")
+        return result
 
     return wrapper

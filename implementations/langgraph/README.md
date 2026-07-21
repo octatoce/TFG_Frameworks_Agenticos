@@ -28,7 +28,7 @@ Asi, cada `run.py` mantiene visible la parte importante de LangGraph: nodos, edg
 
 - `ARCH_01_SINGLE_REACT`: un nodo unico.
 - `ARCH_02_SEQUENTIAL_PIPELINE`: pipeline lineal de cuatro nodos.
-- `ARCH_03_SUPERVISOR_WORKERS`: grafo con supervisor, workers y edges condicionales.
+- `ARCH_03_ROUTER_SPECIALISTS`: grafo con router, specialists y edges condicionales.
 
 ## Notas
 

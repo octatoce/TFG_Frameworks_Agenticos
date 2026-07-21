@@ -29,11 +29,11 @@ Arquitecturas que ya estan implementadas:
 
 - `ARCH_01_SINGLE_REACT`
 - `ARCH_02_SEQUENTIAL_PIPELINE`
-- `ARCH_03_SUPERVISOR_WORKERS`
+- `ARCH_03_ROUTER_SPECIALISTS`
 
 El estado actual del repositorio ya deja prototipos minimos funcionales para la matriz inicial completa de 5 frameworks x 3 arquitecturas. Las ejecuciones pueden usar un LLM local determinista para validar comparabilidad, schemas, metricas y persistencia sin depender de servicios externos. Los tres frameworks nuevos tambien tienen una ruta OpenAI real para las arquitecturas implementadas, usando las primitivas propias de cada framework.
 
-| Framework | `ARCH_01_SINGLE_REACT` | `ARCH_02_SEQUENTIAL_PIPELINE` | `ARCH_03_SUPERVISOR_WORKERS` |
+| Framework | `ARCH_01_SINGLE_REACT` | `ARCH_02_SEQUENTIAL_PIPELINE` | `ARCH_03_ROUTER_SPECIALISTS` |
 | --- | --- | --- | --- |
 | LangGraph | Implementada | Implementada | Implementada |
 | CrewAI | Implementada | Implementada | Implementada |

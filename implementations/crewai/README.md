@@ -25,7 +25,7 @@ Asi, cada `run.py` solo contiene lo especifico de su arquitectura.
 
 - `ARCH_01_SINGLE_REACT`: un agente y una task.
 - `ARCH_02_SEQUENTIAL_PIPELINE`: cuatro fases secuenciales.
-- `ARCH_03_SUPERVISOR_WORKERS`: supervisor, workers seleccionados y sintesis final.
+- `ARCH_03_ROUTER_SPECIALISTS`: router, specialists seleccionados y sintesis final.
 
 ## Notas
 
