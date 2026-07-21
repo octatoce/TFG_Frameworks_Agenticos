@@ -1,5 +1,12 @@
 # ARCH_05_HANDOFF_SWARM - Pydantic AI
 
-Implementacion con `pydantic_graph.Graph`, nodos `BaseNode` y decisiones `HandoffDecision` validadas con Pydantic.
+Implementacion con la API moderna `pydantic_graph.GraphBuilder`, cuatro `Step`
+especialistas y un `Decision` compartido para los handoffs. Las decisiones de los
+agentes siguen validadas como `HandoffDecision` con Pydantic.
 
-Cada especialista es un nodo real del grafo y devuelve otro nodo especialista o `End`.
+El grafo conserva la ejecucion secuencial propia de ARCH_05, los limites de
+handoffs y visitas, y la instrumentacion comun. No usa el `Graph` legacy ni un
+bucle controlador en Python.
+
+Cada especialista es un paso real del grafo y devuelve una transicion tipada al
+`Decision`.

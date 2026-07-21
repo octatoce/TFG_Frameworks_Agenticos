@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from pydantic_graph import BaseNode, End, Graph, GraphRunContext
+from pydantic import BaseModel
+from pydantic_graph import GraphBuilder, StepContext
 
 from benchmark_core.handoff_swarm import (
     HANDOFF_AGENTS,
@@ -59,6 +60,10 @@ class GraphSwarmState:
         self.final_answer = ""
 
 
+class SwarmTransition(BaseModel):
+    next_agent: str | None
+
+
 class GraphDeps:
     def __init__(
         self,
@@ -78,20 +83,10 @@ class GraphDeps:
         self.llm_calls: list[Any] = []
 
 
-def _node_for_agent(agent_name: str) -> SwarmDataNode | SwarmReasoningNode | SwarmValidationNode | SwarmSynthesisNode:
-    if agent_name == "data_specialist":
-        return SwarmDataNode()
-    if agent_name == "reasoning_specialist":
-        return SwarmReasoningNode()
-    if agent_name == "validation_specialist":
-        return SwarmValidationNode()
-    return SwarmSynthesisNode()
-
-
-async def _run_specialist_node(
-    ctx: GraphRunContext[GraphSwarmState, GraphDeps],
+async def _run_specialist_step(
+    ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
     agent_name: str,
-) -> SwarmDataNode | SwarmReasoningNode | SwarmValidationNode | SwarmSynthesisNode | End[dict[str, Any]]:
+) -> SwarmTransition:
     state = ctx.state
     deps = ctx.deps
     input_data = deps.input_data
@@ -100,7 +95,7 @@ async def _run_specialist_node(
         state.stop_reason = "max_agent_invocations_reached"
         state.finalizing_agent = agent_name
         state.final_answer = build_fallback_answer(input_data, state.partial_results)
-        return End({"final_answer": state.final_answer})
+        return SwarmTransition(next_agent=None)
 
     state.repeated_agent_visits[agent_name] = state.repeated_agent_visits.get(agent_name, 0) + 1
     if state.repeated_agent_visits[agent_name] > deps.limits["max_consecutive_visits_per_agent"]:
@@ -110,7 +105,7 @@ async def _run_specialist_node(
         state.finalizing_agent = agent_name
         state.final_answer = build_fallback_answer(input_data, state.partial_results)
         state.warnings.append(f"Visit limit reached for {agent_name}.")
-        return End({"final_answer": state.final_answer})
+        return SwarmTransition(next_agent=None)
 
     prompt_state = {
         "active_agent_history": state.active_agent_history,
@@ -150,7 +145,7 @@ async def _run_specialist_node(
             finished_at=utc_now(),
             metadata={
                 "architecture": "ARCH_05_HANDOFF_SWARM",
-                "native_primitive": "pydantic_graph.BaseNode",
+                "native_primitive": "pydantic_graph.GraphBuilder.Step",
                 "native_graph_available": deps.context.native_graph_available,
             },
         )
@@ -174,17 +169,17 @@ async def _run_specialist_node(
             )
             state.number_of_handoffs += 1
             state.context_transferred = "Fallback context after invalid decision."
-            return _node_for_agent(target_agent)
+            return SwarmTransition(next_agent=target_agent)
         state.stop_reason = "invalid_decision_fallback_finalized"
         state.finalizing_agent = agent_name
         state.final_answer = build_fallback_answer(input_data, state.partial_results)
-        return End({"final_answer": state.final_answer})
+        return SwarmTransition(next_agent=None)
 
     if decision["action"] == "finalize":
         state.stop_reason = "agent_finalized"
         state.finalizing_agent = agent_name
         state.final_answer = extract_final_answer(str(decision["final_output"]))
-        return End({"final_answer": state.final_answer})
+        return SwarmTransition(next_agent=None)
 
     target_agent = str(decision["target_agent"])
     state.cycle_detected = state.cycle_detected or (
@@ -194,7 +189,7 @@ async def _run_specialist_node(
         state.stop_reason = "max_handoffs_reached"
         state.finalizing_agent = agent_name
         state.final_answer = build_fallback_answer(input_data, state.partial_results)
-        return End({"final_answer": state.final_answer})
+        return SwarmTransition(next_agent=None)
 
     state.handoff_history.append(
         {
@@ -209,58 +204,27 @@ async def _run_specialist_node(
     )
     state.number_of_handoffs += 1
     state.context_transferred = str(decision["context_summary"])
-    return _node_for_agent(target_agent)
+    return SwarmTransition(next_agent=target_agent)
 
 
-class SwarmDataNode(BaseNode[GraphSwarmState, GraphDeps, dict[str, Any]]):
-    async def run(
-        self,
-        ctx: GraphRunContext[GraphSwarmState, GraphDeps],
-    ) -> SwarmReasoningNode | SwarmSynthesisNode | End[dict[str, Any]]:
-        next_node = await _run_specialist_node(ctx, "data_specialist")
-        if isinstance(next_node, (SwarmReasoningNode, SwarmSynthesisNode, End)):
-            return next_node
-        return SwarmSynthesisNode()
+def _run_graph(
+    graph,
+    graph_input: SwarmTransition,
+    *,
+    state: GraphSwarmState,
+    deps: GraphDeps,
+    timeout_seconds: int,
+):
+    async def execute():
+        return await asyncio.wait_for(
+            graph.run(inputs=graph_input, state=state, deps=deps),
+            timeout=float(timeout_seconds),
+        )
 
-
-class SwarmReasoningNode(BaseNode[GraphSwarmState, GraphDeps, dict[str, Any]]):
-    async def run(
-        self,
-        ctx: GraphRunContext[GraphSwarmState, GraphDeps],
-    ) -> SwarmDataNode | SwarmValidationNode | SwarmSynthesisNode | End[dict[str, Any]]:
-        next_node = await _run_specialist_node(ctx, "reasoning_specialist")
-        if isinstance(next_node, (SwarmDataNode, SwarmValidationNode, SwarmSynthesisNode, End)):
-            return next_node
-        return SwarmSynthesisNode()
-
-
-class SwarmValidationNode(BaseNode[GraphSwarmState, GraphDeps, dict[str, Any]]):
-    async def run(
-        self,
-        ctx: GraphRunContext[GraphSwarmState, GraphDeps],
-    ) -> SwarmReasoningNode | SwarmSynthesisNode | End[dict[str, Any]]:
-        next_node = await _run_specialist_node(ctx, "validation_specialist")
-        if isinstance(next_node, (SwarmReasoningNode, SwarmSynthesisNode, End)):
-            return next_node
-        return SwarmSynthesisNode()
-
-
-class SwarmSynthesisNode(BaseNode[GraphSwarmState, GraphDeps, dict[str, Any]]):
-    async def run(
-        self,
-        ctx: GraphRunContext[GraphSwarmState, GraphDeps],
-    ) -> SwarmDataNode | SwarmReasoningNode | End[dict[str, Any]]:
-        next_node = await _run_specialist_node(ctx, "synthesis_specialist")
-        if isinstance(next_node, (SwarmDataNode, SwarmReasoningNode, End)):
-            return next_node
-        return End({"final_answer": ctx.state.final_answer or build_fallback_answer(ctx.deps.input_data, ctx.state.partial_results)})
-
-
-def _run_graph(graph, start_node, *, state: GraphSwarmState, deps: GraphDeps):
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(graph.run(start_node, state=state, deps=deps))
+        return asyncio.run(execute())
     raise RuntimeError("Pydantic graph runner requires a synchronous entrypoint.")
 
 
@@ -293,13 +257,78 @@ def run_architecture(
             agents=agents,
             limits=limits,
         )
-        graph = Graph(
-            nodes=[SwarmDataNode, SwarmReasoningNode, SwarmValidationNode, SwarmSynthesisNode],
+        builder = GraphBuilder(
             name="ARCH_05_HANDOFF_SWARM",
             state_type=GraphSwarmState,
-            run_end_type=dict,
+            deps_type=GraphDeps,
+            input_type=SwarmTransition,
+            output_type=dict,
+            auto_instrument=False,
         )
-        _run_graph(graph, _node_for_agent(initial_agent), state=state, deps=deps)
+
+        async def data_specialist(
+            ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
+        ) -> SwarmTransition:
+            return await _run_specialist_step(ctx, "data_specialist")
+
+        async def reasoning_specialist(
+            ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
+        ) -> SwarmTransition:
+            return await _run_specialist_step(ctx, "reasoning_specialist")
+
+        async def validation_specialist(
+            ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
+        ) -> SwarmTransition:
+            return await _run_specialist_step(ctx, "validation_specialist")
+
+        async def synthesis_specialist(
+            ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
+        ) -> SwarmTransition:
+            return await _run_specialist_step(ctx, "synthesis_specialist")
+
+        async def finish_swarm(
+            ctx: StepContext[GraphSwarmState, GraphDeps, SwarmTransition],
+        ) -> dict[str, Any]:
+            if not ctx.state.final_answer:
+                ctx.state.final_answer = build_fallback_answer(
+                    ctx.deps.input_data,
+                    ctx.state.partial_results,
+                )
+            return {"final_answer": ctx.state.final_answer}
+
+        specialist_steps = {
+            "data_specialist": builder.step(data_specialist, node_id="data_specialist"),
+            "reasoning_specialist": builder.step(reasoning_specialist, node_id="reasoning_specialist"),
+            "validation_specialist": builder.step(validation_specialist, node_id="validation_specialist"),
+            "synthesis_specialist": builder.step(synthesis_specialist, node_id="synthesis_specialist"),
+        }
+        finish_step = builder.step(finish_swarm, node_id="finish_swarm")
+        handoff_decision = builder.decision(node_id="handoff_decision")
+        for agent_name in HANDOFF_AGENTS:
+            handoff_decision = handoff_decision.branch(
+                builder.match(
+                    SwarmTransition,
+                    matches=lambda transition, target=agent_name: transition.next_agent == target,
+                ).to(specialist_steps[agent_name])
+            )
+        handoff_decision = handoff_decision.branch(
+            builder.match(
+                SwarmTransition,
+                matches=lambda transition: transition.next_agent is None,
+            ).to(finish_step)
+        )
+
+        builder.add(builder.edge_from(builder.start_node).to(specialist_steps[initial_agent]))
+        builder.add(builder.edge_from(*specialist_steps.values()).to(handoff_decision))
+        builder.add(builder.edge_from(finish_step).to(builder.end_node))
+        graph = builder.build()
+        _run_graph(
+            graph,
+            SwarmTransition(next_agent=initial_agent),
+            state=state,
+            deps=deps,
+            timeout_seconds=config.timeout_seconds,
+        )
 
         final_answer = state.final_answer or build_fallback_answer(input_data, state.partial_results)
         structured_output = {
@@ -322,7 +351,11 @@ def run_architecture(
             "cycle_detected": state.cycle_detected,
             "fallback_used": state.fallback_used,
             "stop_reason": state.stop_reason,
-            "framework_native_primitives": ["pydantic_graph.Graph", "BaseNode", "End"],
+            "framework_native_primitives": [
+                "pydantic_graph.GraphBuilder",
+                "Step",
+                "Decision",
+            ],
             "native_automatic_behaviors": [],
             "parallelism_used": False,
             "warnings": state.warnings,

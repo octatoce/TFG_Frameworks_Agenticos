@@ -176,7 +176,11 @@ Auditoria nativa: `AgentWorkflow` y `can_handoff_to` estan disponibles en `llama
 
 ## Implementación en Pydantic AI y pydantic-graph
 
-Usa un grafo ejecutable real de `pydantic-graph` con `BaseNode`, `GraphRunContext`, `Graph` y `End`. Cada especialista es un nodo registrado que devuelve otro nodo especialista o `End` con la salida final. La validacion de `HandoffDecision` se mantiene con modelos Pydantic.
+Usa la API moderna de `pydantic-graph` con `GraphBuilder`, cuatro `Step`
+especialistas y un `Decision` compartido. Cada paso devuelve una transicion
+tipada que el `Decision` dirige al siguiente especialista o al paso final. La
+validacion de `HandoffDecision` y los limites del swarm se mantienen con modelos
+Pydantic y estado explicito.
 
 ## Primitivas nativas utilizadas
 
@@ -186,7 +190,7 @@ Usa un grafo ejecutable real de `pydantic-graph` con `BaseNode`, `GraphRunContex
 | Microsoft Agent Framework | `HandoffBuilder`, `HandoffConfiguration`, `with_start_agent`, `add_handoff`, herramientas `handoff_to_*`, eventos `handoff_sent`. |
 | CrewAI | `Flow`, `@start`, `@listen`, `@router`, `Agent`, `Task`. |
 | LlamaIndex | `FunctionAgent`/adaptador local y workflow explicito; `AgentWorkflow.can_handoff_to` evaluado pero no usado por bloqueo de instrumentacion/local baseline. |
-| Pydantic AI | `pydantic_graph.Graph`, `BaseNode`, `GraphRunContext`, `End`, modelos Pydantic. |
+| Pydantic AI | `pydantic_graph.GraphBuilder`, `Step`, `Decision`, transiciones y modelos Pydantic. |
 
 ## Diferencia con ARCH_03_ROUTER_SPECIALISTS
 
