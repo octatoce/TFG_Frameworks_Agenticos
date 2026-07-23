@@ -53,6 +53,12 @@ def build_experiment_result(
     debate_execution = structured_output.get("debate_execution")
     if isinstance(debate_execution, dict):
         metrics.metadata["debate_execution"] = debate_execution
+    reflection_execution = structured_output.get("reflection_execution")
+    if isinstance(reflection_execution, dict):
+        metrics.metadata["reflection_execution"] = reflection_execution
+    recovery_execution = structured_output.get("recovery_execution")
+    if isinstance(recovery_execution, dict):
+        metrics.metadata["recovery_execution"] = recovery_execution
 
     return ExperimentResult(
         case_id=input_data.case_id,

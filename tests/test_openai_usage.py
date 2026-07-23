@@ -83,6 +83,16 @@ def test_missing_provider_usage_is_not_replaced_by_proxy_count() -> None:
         extract_openai_token_usage(SimpleNamespace(output="response without usage"))
 
 
+def test_pydantic_ai_pins_the_openai_api_surface() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "implementations/pydantic_ai/utils_pydantic_ai.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'f"openai-chat:{config.model_name}"' in source
+    assert 'f"openai:{config.model_name}"' not in source
+
+
 def test_arch_01_to_05_route_calls_through_instrumented_adapters() -> None:
     root = Path(__file__).resolve().parents[1]
     expected_entrypoint = {

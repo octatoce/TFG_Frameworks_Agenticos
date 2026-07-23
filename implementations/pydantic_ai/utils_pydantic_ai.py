@@ -240,7 +240,7 @@ def build_typed_agent(*, name: str, instructions: str, context: PydanticAIRunCon
         if Agent is None:
             raise RuntimeError("pydantic-ai is required for Pydantic AI OpenAI runs.")
         return Agent(
-            f"openai:{config.model_name}",
+            f"openai-chat:{config.model_name}",
             output_type=str,
             instructions=instructions,
             name=name,
@@ -283,6 +283,7 @@ def complete_openai_agent_step(
         metadata={
             "deterministic": False,
             "framework_api": "pydantic_ai",
+            "openai_api": "chat_completions",
             "agent_type": "Agent[str]",
             "token_counting_method": "openai_usage",
         },

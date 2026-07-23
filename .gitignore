@@ -10,6 +10,7 @@ __pycache__/
 .env.*
 !.env.example
 results/raw/**/*.json
+results/checkpoints/**
 results/processed/**
 results/figures/**
 datasets/raw/**

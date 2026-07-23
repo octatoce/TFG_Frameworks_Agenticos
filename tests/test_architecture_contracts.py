@@ -21,6 +21,8 @@ EXPECTED_RUNNERS = [
     Path("implementations/langgraph/ARCH_06_PARALLEL_FANOUT_FANIN/run.py"),
     Path("implementations/langgraph/ARCH_07_MAP_REDUCE_AGENTIC/run.py"),
     Path("implementations/langgraph/ARCH_08_DEBATE_JUDGE/run.py"),
+    Path("implementations/langgraph/ARCH_09_REFLECTION_CRITIC_LOOP/run.py"),
+    Path("implementations/langgraph/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"),
     Path("implementations/crewai/ARCH_01_SINGLE_REACT/run.py"),
     Path("implementations/crewai/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
     Path("implementations/crewai/ARCH_03_ROUTER_SPECIALISTS/run.py"),
@@ -29,6 +31,8 @@ EXPECTED_RUNNERS = [
     Path("implementations/crewai/ARCH_06_PARALLEL_FANOUT_FANIN/run.py"),
     Path("implementations/crewai/ARCH_07_MAP_REDUCE_AGENTIC/run.py"),
     Path("implementations/crewai/ARCH_08_DEBATE_JUDGE/run.py"),
+    Path("implementations/crewai/ARCH_09_REFLECTION_CRITIC_LOOP/run.py"),
+    Path("implementations/crewai/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"),
     Path("implementations/microsoft_agent_framework/ARCH_01_SINGLE_REACT/run.py"),
     Path("implementations/microsoft_agent_framework/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
     Path("implementations/microsoft_agent_framework/ARCH_03_ROUTER_SPECIALISTS/run.py"),
@@ -37,6 +41,8 @@ EXPECTED_RUNNERS = [
     Path("implementations/microsoft_agent_framework/ARCH_06_PARALLEL_FANOUT_FANIN/run.py"),
     Path("implementations/microsoft_agent_framework/ARCH_07_MAP_REDUCE_AGENTIC/run.py"),
     Path("implementations/microsoft_agent_framework/ARCH_08_DEBATE_JUDGE/run.py"),
+    Path("implementations/microsoft_agent_framework/ARCH_09_REFLECTION_CRITIC_LOOP/run.py"),
+    Path("implementations/microsoft_agent_framework/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"),
     Path("implementations/llamaindex/ARCH_01_SINGLE_REACT/run.py"),
     Path("implementations/llamaindex/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
     Path("implementations/llamaindex/ARCH_03_ROUTER_SPECIALISTS/run.py"),
@@ -45,6 +51,8 @@ EXPECTED_RUNNERS = [
     Path("implementations/llamaindex/ARCH_06_PARALLEL_FANOUT_FANIN/run.py"),
     Path("implementations/llamaindex/ARCH_07_MAP_REDUCE_AGENTIC/run.py"),
     Path("implementations/llamaindex/ARCH_08_DEBATE_JUDGE/run.py"),
+    Path("implementations/llamaindex/ARCH_09_REFLECTION_CRITIC_LOOP/run.py"),
+    Path("implementations/llamaindex/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"),
     Path("implementations/pydantic_ai/ARCH_01_SINGLE_REACT/run.py"),
     Path("implementations/pydantic_ai/ARCH_02_SEQUENTIAL_PIPELINE/run.py"),
     Path("implementations/pydantic_ai/ARCH_03_ROUTER_SPECIALISTS/run.py"),
@@ -53,6 +61,8 @@ EXPECTED_RUNNERS = [
     Path("implementations/pydantic_ai/ARCH_06_PARALLEL_FANOUT_FANIN/run.py"),
     Path("implementations/pydantic_ai/ARCH_07_MAP_REDUCE_AGENTIC/run.py"),
     Path("implementations/pydantic_ai/ARCH_08_DEBATE_JUDGE/run.py"),
+    Path("implementations/pydantic_ai/ARCH_09_REFLECTION_CRITIC_LOOP/run.py"),
+    Path("implementations/pydantic_ai/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"),
 ]
 
 
@@ -381,6 +391,153 @@ def test_architecture_runners_return_experiment_result() -> None:
             assert set(judge_step.input_data["proposals"]) == set(expected_steps[:3])
             assert judge_step.input_data["debate_round"]["round_number"] == 1
             assert judge_step.output_data["judge_decision"]["answer"] == result.final_answer
+
+            raw_path = (
+                root
+                / "results"
+                / "raw"
+                / framework
+                / architecture
+                / f"{config.run_id}.json"
+            )
+            assert raw_path.exists()
+        elif architecture == "ARCH_09_REFLECTION_CRITIC_LOOP":
+            expected_steps = [
+                "generator",
+                "critic_001",
+                "stop_controller_001",
+                "reviser_001",
+                "critic_002",
+                "stop_controller_002",
+            ]
+            structured_output = result.structured_output
+            execution = structured_output["reflection_execution"]
+
+            assert result.status == RunStatus.SUCCESS
+            assert [step.name for step in result.steps] == expected_steps
+            assert result.metrics.step_count == 6
+            assert result.metrics.llm_call_count == 4
+            assert structured_output["iterations_executed"] == 2
+            assert structured_output["iterations_executed"] <= structured_output["max_iterations"]
+            assert structured_output["revision_count"] == 1
+            assert structured_output["number_of_versions"] == 2
+            assert structured_output["stop_reason"] == "quality_sufficient"
+            assert structured_output["stopped_by_quality"] is True
+            assert structured_output["stopped_by_max_iterations"] is False
+            assert structured_output["final_version_index"] == 1
+            assert len(structured_output["version_history"]) == 2
+            assert len(structured_output["version_summaries"]) == 2
+            assert len(structured_output["critique_history"]) == 2
+            assert len(structured_output["stop_decisions"]) == 2
+            assert result.metrics.metadata["reflection_execution"] == execution
+            assert execution["critic_scores"] == [0.62, 0.93]
+            assert execution["llm_call_count_by_component"] == {
+                "generator": 1,
+                "critic": 2,
+                "reviser": 1,
+                "stop_controller": 0,
+            }
+
+            generator, critic_1, stop_1, reviser_1, critic_2, stop_2 = result.steps
+            assert generator.step_type == "reflection_generator_llm_call"
+            assert generator.input_data["depends_on"] == []
+            assert critic_1.step_type == "reflection_critic_llm_call"
+            assert critic_1.input_data["depends_on"] == ["generator"]
+            assert stop_1.step_type == "reflection_stop_controller"
+            assert stop_1.input_data["depends_on"] == ["critic_001"]
+            assert stop_1.llm_call_ids == []
+            assert reviser_1.step_type == "reflection_reviser_llm_call"
+            assert reviser_1.input_data["depends_on"] == [
+                "critic_001",
+                "stop_controller_001",
+            ]
+            assert critic_2.input_data["depends_on"] == ["reviser_001"]
+            assert stop_2.input_data["depends_on"] == ["critic_002"]
+            assert stop_2.output_data["stop_decision"]["should_stop"] is True
+            assert result.final_answer == structured_output["final_version"]["answer"]
+
+            raw_path = (
+                root
+                / "results"
+                / "raw"
+                / framework
+                / architecture
+                / f"{config.run_id}.json"
+            )
+            assert raw_path.exists()
+        elif architecture == "ARCH_10_CHECKPOINT_MEMORY_RECOVERY":
+            expected_steps = [
+                "state_initializer",
+                "planning_or_analysis_step",
+                "checkpoint_writer",
+                "failure_injector",
+                "recovery_loader",
+                "continuation_step",
+                "finalizer",
+            ]
+            structured_output = result.structured_output
+            execution = structured_output["recovery_execution"]
+
+            assert result.status == RunStatus.SUCCESS
+            assert [step.name for step in result.steps] == expected_steps
+            assert [step.step_id for step in result.steps] == list(range(1, 8))
+            assert result.metrics.step_count == 7
+            assert result.metrics.llm_call_count == 2
+            assert structured_output["checkpoint_used"] is True
+            assert structured_output["failure_injected"] is True
+            assert structured_output["recovery_attempted"] is True
+            assert structured_output["recovery_successful"] is True
+            assert structured_output["checkpoint_id"]
+            assert structured_output["checkpoint_stage"] == "planning_or_analysis_step"
+            assert structured_output["result_generated_after_recovery"] is True
+            assert structured_output["answer"] == result.final_answer
+            assert execution["checkpoints_created"] == 1
+            assert execution["failure_stage"] == "failure_injector"
+            assert execution["controlled_error_count"] == 1
+            assert execution["uncontrolled_error_count"] == 0
+            assert execution["state_digest_verified"] is True
+            assert execution["steps_before_failure"] == 3
+            assert execution["steps_after_recovery"] == 2
+            if framework == "langgraph":
+                assert execution["checkpoint_backend"].endswith("SqliteSaver")
+                assert execution["native_checkpointing"] is True
+                assert execution["durable_storage"] is True
+                assert execution["database_reopened_for_recovery"] is True
+                assert ".sqlite" in execution["recovery_source"]
+            if framework == "pydantic_ai":
+                assert execution["native_checkpointing"] is False
+                assert execution["checkpoint_backend"] == "pydantic.PortableCheckpoint JSON"
+            assert execution["llm_call_count_by_component"] == {
+                "state_initializer": 0,
+                "planning_or_analysis_step": 1,
+                "checkpoint_writer": 0,
+                "failure_injector": 0,
+                "recovery_loader": 0,
+                "continuation_step": 1,
+                "finalizer": 0,
+            }
+            assert result.metrics.metadata["recovery_execution"] == execution
+
+            initializer, planning, writer, failure, loader, continuation, finalizer = result.steps
+            assert initializer.step_type == "recovery_state_initialization"
+            assert planning.step_type == "recovery_planning_llm_call"
+            assert planning.input_data["depends_on"] == ["state_initializer"]
+            assert writer.step_type == "recovery_checkpoint_write"
+            assert writer.input_data["depends_on"] == ["planning_or_analysis_step"]
+            assert writer.output_data["checkpoint_id"] == structured_output["checkpoint_id"]
+            assert writer.output_data["state_digest"] == execution["state_digest"]
+            assert failure.step_type == "recovery_controlled_failure"
+            assert failure.input_data["depends_on"] == ["checkpoint_writer"]
+            assert failure.error and "ControlledFailure" in failure.error
+            assert loader.step_type == "recovery_checkpoint_load"
+            assert loader.input_data["depends_on"] == ["failure_injector"]
+            assert loader.output_data["recovery_successful"] is True
+            assert loader.output_data["state_digest_verified"] is True
+            assert continuation.step_type == "recovery_continuation_llm_call"
+            assert continuation.input_data["depends_on"] == ["recovery_loader"]
+            assert finalizer.step_type == "recovery_finalization"
+            assert finalizer.input_data["depends_on"] == ["continuation_step"]
+            assert result.steps.index(finalizer) > result.steps.index(loader)
 
             raw_path = (
                 root
@@ -987,3 +1144,163 @@ def test_arch08_configuration_and_documentation_are_registered() -> None:
     assert "ARCH_08_DEBATE_JUDGE" in experiments
     assert "ARCH_08_DEBATE_JUDGE" in decisions
     assert spec.exists()
+
+
+def test_arch09_structural_constraints_and_native_primitives() -> None:
+    root = Path(__file__).resolve().parents[1]
+    runners = [
+        path
+        for path in EXPECTED_RUNNERS
+        if path.parts[2] == "ARCH_09_REFLECTION_CRITIC_LOOP"
+    ]
+    assert len(runners) == 5
+
+    forbidden = (
+        "Process.hierarchical",
+        "manager_agent",
+        "HandoffBuilder",
+        "partition_documents",
+        "DEBATERS",
+        "JUDGE",
+    )
+    for relative_path in runners:
+        source = (root / relative_path).read_text(encoding="utf-8")
+        assert "GENERATOR" in source
+        assert "CRITIC" in source
+        assert "REVISER" in source
+        assert "STOP_CONTROLLER" in source
+        assert "evaluate_stop" in source
+        assert "make_reflection_step" in source
+        assert "while True" not in source
+        assert all(term not in source for term in forbidden)
+
+    langgraph_source = (root / runners[0]).read_text(encoding="utf-8")
+    assert "StateGraph" in langgraph_source
+    assert "graph.add_conditional_edges" in langgraph_source
+    assert "graph.add_edge(REVISER, CRITIC)" in langgraph_source
+
+    crewai_source = (root / runners[1]).read_text(encoding="utf-8")
+    assert "for iteration in range(1, settings.max_iterations + 1)" in crewai_source
+    assert "create_task" in crewai_source
+    assert "create_sequential_crew" in crewai_source
+    assert "max_iter=1" in crewai_source
+    assert "allow_delegation=False" in crewai_source
+
+    microsoft_source = (root / runners[2]).read_text(encoding="utf-8")
+    assert "WorkflowBuilder" in microsoft_source
+    assert ".add_switch_case_edge_group(" in microsoft_source
+    assert ".add_edge(reviser, critic)" in microsoft_source
+
+    llamaindex_source = (root / runners[3]).read_text(encoding="utf-8")
+    assert "Workflow" in llamaindex_source
+    assert "class ReviserRequestEvent(Event)" in llamaindex_source
+    assert "async def stop_controller" in llamaindex_source
+    assert "async def reviser" in llamaindex_source
+
+    pydantic_source = (root / runners[4]).read_text(encoding="utf-8")
+    assert "GraphBuilder" in pydantic_source
+    assert 'builder.decision(node_id="stop_decision")' in pydantic_source
+    assert "builder.edge_from(generator_step, reviser_step).to(critic_step)" in pydantic_source
+    assert "StopDecision" in pydantic_source
+
+    common_source = (root / "benchmark_core/reflection_critic_loop.py").read_text(
+        encoding="utf-8"
+    )
+    assert "implementations." not in common_source
+    assert "asyncio" not in common_source
+
+
+def test_arch09_max_iteration_stop_across_frameworks() -> None:
+    root = Path(__file__).resolve().parents[1]
+    runners = [
+        path
+        for path in EXPECTED_RUNNERS
+        if path.parts[2] == "ARCH_09_REFLECTION_CRITIC_LOOP"
+    ]
+    input_data = ExperimentInput(
+        case_id="arch09-max-stop",
+        dataset_id="samples",
+        task_type="qa",
+        query="Summarize the evidence conservatively.",
+        documents=[DocumentInput(document_id="doc-009", content="Bounded evidence.")],
+    )
+
+    for relative_path in runners:
+        framework = relative_path.parts[1]
+        module = load_module(root / relative_path)
+        config = ExperimentConfig(
+            experiment_id="arch09-max-stop-test",
+            framework=framework,
+            architecture="ARCH_09_REFLECTION_CRITIC_LOOP",
+            model_provider="local",
+            model_name="deterministic-local-v1",
+            run_id=f"arch09-max-stop-{framework}",
+            max_agent_iterations=1,
+            metadata={"reflection_max_iterations": 1},
+        )
+        result = module.run_architecture(input_data, config)
+
+        assert result.status == RunStatus.SUCCESS
+        assert [step.name for step in result.steps] == [
+            "generator",
+            "critic_001",
+            "stop_controller_001",
+        ]
+        assert result.metrics.llm_call_count == 2
+        assert result.structured_output["iterations_executed"] == 1
+        assert result.structured_output["revision_count"] == 0
+        assert result.structured_output["number_of_versions"] == 1
+        assert result.structured_output["stop_reason"] == "max_iterations_reached"
+        assert result.structured_output["stopped_by_max_iterations"] is True
+        assert result.structured_output["stopped_by_quality"] is False
+        assert (
+            root
+            / "results"
+            / "raw"
+            / framework
+            / "ARCH_09_REFLECTION_CRITIC_LOOP"
+            / f"{config.run_id}.json"
+        ).exists()
+
+
+def test_arch09_configuration_and_documentation_are_registered() -> None:
+    root = Path(__file__).resolve().parents[1]
+    experiments = (root / "configs/experiments.yaml").read_text(encoding="utf-8")
+    decisions = (root / "docs/decisions.md").read_text(encoding="utf-8")
+    spec = root / "docs/architecture_specs/ARCH_09_REFLECTION_CRITIC_LOOP.md"
+
+    assert "ARCH_09_REFLECTION_CRITIC_LOOP" in experiments
+    assert "ARCH_09_REFLECTION_CRITIC_LOOP" in decisions
+    assert "ARCH_11" not in experiments
+    assert spec.exists()
+
+
+def test_arch10_configuration_and_documentation_are_registered() -> None:
+    root = Path(__file__).resolve().parents[1]
+    experiments = (root / "configs/experiments.yaml").read_text(encoding="utf-8")
+    decisions = (root / "docs/decisions.md").read_text(encoding="utf-8")
+    spec = root / "docs/architecture_specs/ARCH_10_CHECKPOINT_MEMORY_RECOVERY.md"
+
+    assert "ARCH_10_CHECKPOINT_MEMORY_RECOVERY" in experiments
+    assert "ARCH_10_CHECKPOINT_MEMORY_RECOVERY" in decisions
+    assert "ARCH_11" not in experiments
+    assert spec.exists()
+
+
+def test_arch10_langgraph_uses_durable_sqlite_and_pydantic_scope_is_explicit() -> None:
+    root = Path(__file__).resolve().parents[1]
+    langgraph_source = (
+        root
+        / "implementations/langgraph/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"
+    ).read_text(encoding="utf-8")
+    pydantic_source = (
+        root
+        / "implementations/pydantic_ai/ARCH_10_CHECKPOINT_MEMORY_RECOVERY/run.py"
+    ).read_text(encoding="utf-8")
+    project = (root / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "SqliteSaver" in langgraph_source
+    assert "database_reopened_for_recovery" in langgraph_source
+    assert "langgraph-checkpoint-sqlite==3.1.0" in project
+    assert "PortableCheckpoint" in pydantic_source
+    assert "native_checkpointing=False" in pydantic_source

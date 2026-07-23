@@ -27,6 +27,14 @@ from benchmark_core.debate_judge import (
     build_deterministic_debate_output,
     detect_debate_component,
 )
+from benchmark_core.reflection_critic_loop import (
+    build_deterministic_reflection_output,
+    detect_reflection_component,
+)
+from benchmark_core.checkpoint_memory_recovery import (
+    build_deterministic_recovery_output,
+    detect_recovery_component,
+)
 
 
 @dataclass
@@ -699,6 +707,8 @@ class InstrumentedLLM:
         parallel_component = detect_parallel_component(prompt)
         map_reduce_component = detect_map_reduce_component(prompt)
         debate_component = detect_debate_component(prompt)
+        reflection_component = detect_reflection_component(prompt)
+        recovery_component = detect_recovery_component(prompt)
         if phase is not None:
             response = build_deterministic_pipeline_output(input_data, phase)
         elif router_phase is not None:
@@ -717,6 +727,15 @@ class InstrumentedLLM:
             )
         elif debate_component is not None:
             response = build_deterministic_debate_output(input_data, debate_component)
+        elif reflection_component is not None:
+            component, iteration = reflection_component
+            response = build_deterministic_reflection_output(
+                input_data,
+                component,
+                iteration,
+            )
+        elif recovery_component is not None:
+            response = build_deterministic_recovery_output(input_data, recovery_component)
         else:
             final_answer = build_deterministic_answer(input_data)
             response = f"Thought: I can answer from the provided benchmark input.\nFinal Answer: {final_answer}"

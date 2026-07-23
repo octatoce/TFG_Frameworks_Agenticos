@@ -23,6 +23,7 @@ dev = [
 
 langgraph = [
     "langgraph==1.2.4",
+    "langgraph-checkpoint-sqlite==3.1.0",
 ]
 
 crewai = [
@@ -46,6 +47,7 @@ pydantic_ai = [
 
 all-frameworks = [
     "langgraph==1.2.4",
+    "langgraph-checkpoint-sqlite==3.1.0",
     "crewai==1.14.6",
     "agent-framework-openai",
     "agent-framework-orchestrations",
